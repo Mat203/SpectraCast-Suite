@@ -16,19 +16,31 @@ class DataLoader:
         file_path = self.data_dir / filename
         
         if not file_path.exists():
-            print(f"Файл '{filename}' не знайдено у '{self.data_dir.absolute()}'.")
+            print(f"Error: Файл не знайдено: {file_path}")
             return None
             
         try:
             df = pd.read_csv(file_path)
             
             if df.empty:
-                print(f"Файл '{filename}' порожній.")
+                print(f"Warning: Файл '{filename}' порожній.")
                 return None
+
+            for col in df.columns:
+                try:
+                    converted = pd.to_datetime(df[col], format='mixed', errors='coerce')
+                    
+                    if converted.notna().any():
+                        df.index = converted
+                        df.drop(columns=[col], inplace=True)
+                        df.sort_index(inplace=True)
+                        break
+                except Exception:
+                    continue
                 
-            print(f"Завантажено '{filename}'. Розмір: {df.shape}")
+            print(f"Success: Завантажено '{filename}'. Розмір: {df.shape}")
             return df
             
         except Exception as e:
-            print(f"Помилка читання файлу: {e}")
+            print(f"Critical Error: {e}")
             return None
