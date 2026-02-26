@@ -12,34 +12,49 @@ class DataScanner:
             except Exception:
                 print("Index is not a date")
 
+    def _detect_frequency_and_gaps(self) -> Dict[str, Any]:
+        result = {
+            "frequency": "Unknown (Irregular)",
+            "missing_dates_count": 0,
+            "missing_dates": []
+        }
+
+        if len(self.df) <= 1:
+            return result
+
+        sorted_index = self.df.index.sort_values().drop_duplicates()
+        
+        deltas = sorted_index.to_series().diff().dropna()
+        
+        if deltas.empty:
+            return result
+
+        dominant_delta = deltas.mode()[0]
+        result["frequency"] = str(dominant_delta)
+        
+        ideal_range = pd.date_range(
+            start=sorted_index.min(), 
+            end=sorted_index.max(), 
+            freq=dominant_delta
+        )
+        
+        missing_dates = ideal_range.difference(self.df.index)
+        
+        result["missing_dates_count"] = len(missing_dates)
+        if len(missing_dates) > 0:
+            result["missing_dates"] = [d.strftime('%Y-%m-%d') for d in missing_dates[:5]]
+
+        return result
+
     def run_health_check(self) -> Dict[str, Any]:
         report = {
             "rows": len(self.df),
             "columns": list(self.df.columns),
-            "frequency": None,
-            "missing_dates_count": 0,
-            "missing_dates": [],
             "outliers": {}
         }
 
-        inferred_freq = pd.infer_freq(self.df.index)
-        
-        if inferred_freq:
-            report["frequency"] = inferred_freq
-            
-            ideal_range = pd.date_range(
-                start=self.df.index.min(), 
-                end=self.df.index.max(), 
-                freq=inferred_freq
-            )
-            
-            missing_dates = ideal_range.difference(self.df.index)
-            
-            report["missing_dates_count"] = len(missing_dates)
-            if len(missing_dates) > 0:
-                report["missing_dates"] = [d.strftime('%Y-%m-%d') for d in missing_dates[:5]]
-        else:
-            report["frequency"] = "Unknown (Irregular)"
+        time_check_results = self._detect_frequency_and_gaps()
+        report.update(time_check_results)
 
         numeric_cols = self.df.select_dtypes(include=[np.number]).columns
         
