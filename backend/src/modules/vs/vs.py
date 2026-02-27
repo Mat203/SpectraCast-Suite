@@ -2,6 +2,28 @@ import json
 import matplotlib.pyplot as plt
 import pandas as pd
 from pathlib import Path
+import ast
+
+class _StyleRemover(ast.NodeTransformer):
+    def __init__(self):
+        self.style_args = {
+            'color', 'c', 'linewidth', 'lw', 'linestyle', 'ls', 
+            'fontsize', 'fontweight', 'figsize', 'marker', 
+            'markersize', 'alpha', 'facecolor', 'edgecolor', 
+            'palette', 'cmap'
+        }
+
+    def visit_Call(self, node):
+        self.generic_visit(node)
+        
+        new_keywords = []
+        for kw in node.keywords:
+            if kw.arg not in self.style_args:
+                new_keywords.append(kw)
+                
+        node.keywords = new_keywords
+        return node
+    
 
 class VisualStandardizer:
     def __init__(self, config_filename: str = "style_config.json"):
@@ -32,7 +54,7 @@ class VisualStandardizer:
 
     def plot_time_series(self, df: pd.DataFrame, column: str, title: str, filename: str):
         if column not in df.columns:
-            print(f"Error: Колонку '{column}' не знайдено в датасеті.")
+            print(f"Error: Column '{column}' not found in dataset.")
             return
 
         fig, ax = plt.subplots()
@@ -49,4 +71,33 @@ class VisualStandardizer:
         fig.savefig(output_path)
         plt.close(fig)
         
-        print(f"Visualizer: Графік збережено у '{output_path}'")
+        print(f"Visualizer: Chart saved '{output_path}'")
+
+    def standardize_user_code(self, raw_code: str) -> str:
+        try:
+            tree = ast.parse(raw_code)
+            
+            transformer = _StyleRemover()
+            cleaned_tree = transformer.visit(tree)
+            
+            cleaned_code = ast.unparse(cleaned_tree)
+            
+            style_injection = f"""
+import json
+import matplotlib.pyplot as plt
+try:
+    with open('{self.config_path.as_posix()}', 'r', encoding='utf-8') as f:
+        plt.rcParams.update(json.load(f))
+except Exception as e:
+    print("Style config not loaded in user code:", e)
+
+# --- USER CODE BELOW ---
+"""
+            return style_injection + cleaned_code
+
+        except SyntaxError as e:
+            print(f"Code mistake in user input: {e}")
+            return raw_code
+        except Exception as e:
+            print(f"Syntax Error: {e}")
+            return raw_code

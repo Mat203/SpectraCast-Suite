@@ -32,5 +32,16 @@ def main():
             filename="price_trend.png"
         )
 
+    print("\n--- Testing Code Standardizer ---")
+    visualizer = VisualStandardizer()
+    
+    user_code = """
+plt.plot(df['Date'], df['Price'], color='red', linewidth=5, linestyle=':')
+plt.title('My Title', fontsize=25, fontweight='bold', color='purple')
+    """
+    
+    clean_code = visualizer.standardize_user_code(user_code)
+    print(clean_code)
+
 if __name__ == "__main__":
     main()
