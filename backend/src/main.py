@@ -9,7 +9,6 @@ from src.modules.vs.vs import VisualStandardizer
 
 def main():
     print("--- SpectraCast Suite ---")
-    print("Ver 0.1.0 - Architecture Init\n")
     
     loader = DataLoader(data_folder_name="data")
     filename = "dirty_data.csv"
