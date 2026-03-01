@@ -40,7 +40,7 @@ class VisualStandardizer:
 
     def _apply_style_from_config(self):
         if not self.config_path.exists():
-            print(f"Warning: Файл конфігурації '{self.config_path}' не знайдено. Використовуються стандартні стилі.")
+            print(f"Warning: Config file '{self.config_path}' нnot found. Using regular style.")
             return
 
         try:
