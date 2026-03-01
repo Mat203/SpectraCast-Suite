@@ -24,7 +24,6 @@ class _StyleRemover(ast.NodeTransformer):
         node.keywords = new_keywords
         return node
     
-
 class VisualStandardizer:
     def __init__(self, config_filename: str = "style_config.json"):
         current_file = Path(__file__).resolve()
@@ -36,18 +35,20 @@ class VisualStandardizer:
         
         self.config_path = backend_dir / "style_config" / config_filename
         
+        self.style_dict = {} 
+        
         self._apply_style_from_config()
 
     def _apply_style_from_config(self):
         if not self.config_path.exists():
-            print(f"Warning: Config file '{self.config_path}' нnot found. Using regular style.")
+            print(f"Warning: Config file '{self.config_path}' not found. Using regular style.")
             return
 
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
-                style_config = json.load(f)
+                self.style_dict = json.load(f)
             
-            plt.rcParams.update(style_config)
+            plt.rcParams.update(self.style_dict)
             
         except Exception as e:
             print(f"Error reading style config: {e}")
@@ -82,16 +83,13 @@ class VisualStandardizer:
             
             cleaned_code = ast.unparse(cleaned_tree)
             
-            style_injection = f"""
-import json
-import matplotlib.pyplot as plt
-try:
-    with open('{self.config_path.as_posix()}', 'r', encoding='utf-8') as f:
-        plt.rcParams.update(json.load(f))
-except Exception as e:
-    print("Style config not loaded in user code:", e)
+            style_str = json.dumps(self.style_dict, indent=4) if self.style_dict else "{}"
+            
+            style_injection = f"""import matplotlib.pyplot as plt
 
-# --- USER CODE BELOW ---
+spectra_style = {style_str}
+plt.rcParams.update(spectra_style)
+
 """
             return style_injection + cleaned_code
 
