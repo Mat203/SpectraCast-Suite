@@ -26,8 +26,9 @@ class TestVisualStandardizer(unittest.TestCase):
         
         result = vs.standardize_user_code(user_code)
         
-        self.assertIn("import json", result)
-        self.assertIn("plt.rcParams.update", result)
+        self.assertIn("import matplotlib.pyplot as plt", result)
+        self.assertIn("spectra_style =", result)
+        self.assertIn("plt.rcParams.update(spectra_style)", result)
         
         self.assertNotIn("color=", result)
         self.assertNotIn("fontweight=", result)
