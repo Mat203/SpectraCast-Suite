@@ -2,7 +2,7 @@ import unittest
 import pandas as pd
 import numpy as np
 
-from ..src.modules.dq.dq import DataScanner
+from backend.src.modules.dq.dq import DataScanner
 
 class TestDataScanner(unittest.TestCase):
     
