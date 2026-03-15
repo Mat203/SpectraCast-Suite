@@ -1,0 +1,18 @@
+{
+    "font.family": "serif",
+    "font.size": 12,
+    "axes.titlesize": 16,
+    "axes.titleweight": "bold",
+    "axes.labelsize": 12,
+    "axes.labelweight": "normal",
+    "axes.spines.top": false,
+    "axes.spines.right": false,
+    "axes.grid": true,
+    "grid.alpha": 0.5,
+    "grid.linestyle": ":",
+    "grid.color": "#90A4AE",
+    "figure.figsize": [12, 6],
+    "figure.dpi": 300,
+    "lines.linewidth": 2.5,
+    "lines.markersize": 6
+}
