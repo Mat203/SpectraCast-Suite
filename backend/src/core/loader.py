@@ -25,6 +25,10 @@ class DataLoader:
             if df.empty:
                 print(f"Warning: Файл '{filename}' порожній.")
                 return None
+            
+            print(f"\n[v] Виявлено колонки у '{filename}':")
+            for i, col in enumerate(df.columns, 1):
+                print(f"    {i}. {col}")
 
             for col in df.columns:
                 try:
