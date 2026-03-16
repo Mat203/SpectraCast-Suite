@@ -3,7 +3,8 @@ import ast
 import pandas as pd
 from unittest.mock import patch, MagicMock
 
-from backend.src.modules.vs.vs import VisualStandardizer, _StyleRemover
+from backend.src.modules.vs.visualizer import VisualStandardizer
+from backend.src.modules.vs.code_cleaner import StyleRemover
 
 class TestVisualStandardizer(unittest.TestCase):
 
@@ -11,7 +12,7 @@ class TestVisualStandardizer(unittest.TestCase):
         raw_code = "plt.plot(x, y, color='red', lw=2, label='Trend', fontsize=12)"
         tree = ast.parse(raw_code)
         
-        cleaned_tree = _StyleRemover().visit(tree)
+        cleaned_tree = StyleRemover().visit(tree)
         cleaned_code = ast.unparse(cleaned_tree)
         
         self.assertNotIn("color=", cleaned_code)
