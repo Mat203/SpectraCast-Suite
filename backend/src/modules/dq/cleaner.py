@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.impute import KNNImputer
+from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 
 class DataCleaner:
     def __init__(self, df: pd.DataFrame):
@@ -40,3 +41,17 @@ class DataCleaner:
             self.df[numeric_cols] = imputer.fit_transform(self.df[numeric_cols])
         elif method == '7':
             pass
+    def handle_outliers(self, column: str, method: str, outlier_mask: pd.Series):
+        if method == '3':
+            return
+
+        print(f"[*] Handling outliers in '{column}' using method {method}...")
+
+        if method == '1':
+            model = SimpleExpSmoothing(self.df[column], initialization_method="estimated").fit()
+            self.df[column] = model.fittedvalues
+
+        elif method == '2':
+            self.df.loc[outlier_mask, column] = np.nan
+            self.df[column] = self.df[column].interpolate(method='linear')
+            self.df[column] = self.df[column].ffill().bfill()

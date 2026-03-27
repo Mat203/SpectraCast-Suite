@@ -1,6 +1,8 @@
 import os
 import sys
 from pathlib import Path
+import numpy as np
+from scipy import stats
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, '../../../../'))
@@ -53,6 +55,23 @@ def run_dq_pipeline():
     for col in cols_with_nans:
         method = input(f"Method for '{col}' (1-7): ").strip()
         cleaner.impute_column(col, method)
+
+
+    if report["outliers"]:
+        print("\n" + "-"*40)
+        print("ANOMALY HANDLING (Outliers detected)")
+        print("-"*40)
+        print("Select Outlier Handling Method:")
+        print("1. Smoothing (Exponential smoothing for the whole series)")
+        print("2. Delete & Interpolate (Replace outliers with interpolated values)")
+        print("3. Leave as it is")
+
+        for col, count in report["outliers"].items():
+            z_scores = np.abs(stats.zscore(cleaner.df[col], nan_policy='omit'))
+            outlier_mask = z_scores > 3
+        
+        choice = input(f"Method for '{col}' ({count} outliers) (1-3): ").strip()
+        cleaner.handle_outliers(col, choice, outlier_mask)
 
     save_path = loader.data_dir / f"cleaned_{filename}"
     cleaner.df.to_csv(save_path)
