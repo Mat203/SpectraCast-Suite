@@ -38,7 +38,11 @@ class DataCleaner:
         elif method == '6':
             numeric_cols = self.df.select_dtypes(include=[np.number]).columns
             imputer = KNNImputer(n_neighbors=5)
-            self.df[numeric_cols] = imputer.fit_transform(self.df[numeric_cols])
+            imputed_matrix = imputer.fit_transform(self.df[numeric_cols])
+            
+            col_idx = numeric_cols.get_loc(column)
+            
+            self.df[column] = imputed_matrix[:, col_idx]
         elif method == '7':
             pass
     def handle_outliers(self, column: str, method: str, outlier_mask: pd.Series):
@@ -49,7 +53,7 @@ class DataCleaner:
 
         if method == '1':
             model = SimpleExpSmoothing(self.df[column], initialization_method="estimated").fit()
-            self.df[column] = model.fittedvalues
+            self.df.loc[outlier_mask, column] = model.fittedvalues[outlier_mask]
 
         elif method == '2':
             self.df.loc[outlier_mask, column] = np.nan
