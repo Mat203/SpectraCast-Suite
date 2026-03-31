@@ -51,6 +51,9 @@ class DataCleaner:
 
         print(f"[*] Handling outliers in '{column}' using method {method}...")
 
+        if pd.api.types.is_integer_dtype(self.df[column]):
+            self.df[column] = self.df[column].astype(float)
+
         if method == '1':
             model = SimpleExpSmoothing(self.df[column], initialization_method="estimated").fit()
             self.df.loc[outlier_mask, column] = model.fittedvalues[outlier_mask]
