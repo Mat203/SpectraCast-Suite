@@ -10,32 +10,56 @@ class DataScanner:
             try:
                 self.df.index = pd.to_datetime(self.df.index)
             except Exception:
-                print("Index is not a date")
+                print("Warning: Index is not a date. Time-based scanning may be limited.")
 
     def _detect_frequency_and_gaps(self) -> Dict[str, Any]:
         result = {
-            "frequency": "Unknown (Irregular)",
+            "frequency": "Unknown",
+            "display_frequency": "Unknown (Irregular)",
             "missing_dates_count": 0,
             "missing_dates": []
         }
 
-        if len(self.df) <= 1:
+        if len(self.df) <= 1 or not isinstance(self.df.index, pd.DatetimeIndex):
             return result
 
         sorted_index = self.df.index.sort_values().drop_duplicates()
-        
         deltas = sorted_index.to_series().diff().dropna()
         
         if deltas.empty:
             return result
 
-        dominant_delta = deltas.mode()[0]
-        result["frequency"] = str(dominant_delta)
+        dominant_delta_days = deltas.mode()[0].days
+        
+        if 28 <= dominant_delta_days <= 31:
+            most_frequent_day = pd.Series(sorted_index.day).mode()[0]
+            freq_str = 'MS' if most_frequent_day == 1 else 'ME'
+            display_freq = "Monthly"
+        elif 89 <= dominant_delta_days <= 93:
+            freq_str = 'QS' 
+            display_freq = "Quarterly"
+        elif dominant_delta_days == 7:
+            freq_str = 'W'
+            display_freq = "Weekly"
+        elif dominant_delta_days == 1:
+            has_weekends = (sorted_index.dayofweek >= 5).any()
+            if not has_weekends:
+                freq_str = 'B'
+                display_freq = "Business Daily (Mon-Fri)"
+            else:
+                freq_str = 'D'
+                display_freq = "Daily"
+        else:
+            freq_str = f"{dominant_delta_days}D"
+            display_freq = f"Every {dominant_delta_days} days"
+
+        result["frequency"] = freq_str
+        result["display_frequency"] = display_freq
         
         ideal_range = pd.date_range(
             start=sorted_index.min(), 
             end=sorted_index.max(), 
-            freq=dominant_delta
+            freq=freq_str
         )
         
         missing_dates = ideal_range.difference(self.df.index)
@@ -50,7 +74,8 @@ class DataScanner:
         report = {
             "rows": len(self.df),
             "columns": list(self.df.columns),
-            "outliers": {}
+            "outliers": {},
+            "missing_values": self.df.isna().sum().to_dict()
         }
 
         time_check_results = self._detect_frequency_and_gaps()
@@ -68,10 +93,11 @@ class DataScanner:
         return report
 
     def print_report(self, report: Dict[str, Any]):
-        print("\n--- DATA HEALTH CARD ---")
-        
+        print("\n" + "="*40)
+        print(" DATA HEALTH CARD")
+        print("="*40)
         print(f"Rows:      {report['rows']}")
-        print(f"Frequency: {report['frequency']}")
+        print(f"Frequency: {report['display_frequency']}")
         
         if report["missing_dates_count"] > 0:
             print(f"Missing Dates (Gaps): {report['missing_dates_count']}")
@@ -79,11 +105,14 @@ class DataScanner:
         else:
             print("Missing Dates:        0")
 
+        print("\nMissing Values (NaNs):")
+        for col, count in report['missing_values'].items():
+            if count > 0:
+                print(f"  - {col}: {count} missing")
+
         if report["outliers"]:
             print("\nExtreme Outliers (Z-score > 3):")
-            print(f"{'Column':<20} | {'Count'}")
-            print("-" * 30)
             for col, count in report["outliers"].items():
-                print(f"{col:<20} | {count}")
+                print(f"  - {col}: {count} outliers")
         else:
             print("\nNo extreme outliers detected.")
