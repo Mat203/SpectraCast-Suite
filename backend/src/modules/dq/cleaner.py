@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.impute import KNNImputer
 from statsmodels.tsa.holtwinters import SimpleExpSmoothing
+from scipy import stats
 
 class DataCleaner:
     def __init__(self, df: pd.DataFrame):
@@ -62,3 +63,12 @@ class DataCleaner:
             self.df.loc[outlier_mask, column] = np.nan
             self.df[column] = self.df[column].interpolate(method='linear')
             self.df[column] = self.df[column].ffill().bfill()
+
+    def detect_and_handle_outliers(self, column: str, method: str):
+        if not pd.api.types.is_numeric_dtype(self.df[column]):
+            return
+
+        z_scores = np.abs(stats.zscore(self.df[column], nan_policy='omit'))
+        outlier_mask = z_scores > 3
+        if outlier_mask.any():
+            self.handle_outliers(column, method, outlier_mask)
