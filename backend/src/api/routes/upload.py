@@ -10,7 +10,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[3]
 UPLOADS_DIR = BACKEND_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-@router.post("/")
+@router.post("")
 async def upload_file(file: UploadFile = File(...)):
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")

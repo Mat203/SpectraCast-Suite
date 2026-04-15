@@ -8,11 +8,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.src.api.routes import dq, vs, upload
 import uvicorn
 
-app = FastAPI(title="SpectraCast Suite API", description="API for DQ and VS analytical modules")
+app = FastAPI(title="SpectraCast Suite API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://localhost",
+        "http://127.0.0.1"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,4 +33,4 @@ def root():
     return {"message": "Welcome to the SpectraCast Suite API"}
 
 if __name__ == "__main__":
-    uvicorn.run("backend.src.api.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.src.api.main:app", host="127.0.0.1", port=8000, reload=True)

@@ -26,16 +26,33 @@ def convert_numpy_types(obj: Any) -> Any:
 
 @router.post("/scan", response_model=Dict[str, Any])
 def scan_data(request: ScanRequest):
-    loader = DataLoader(data_folder_name="uploads")
-    df = loader.load_csv(f"{request.file_id}_raw.csv")
+    try:
+        print(f"[SCAN] Starting scan for file_id: {request.file_id}")
+        loader = DataLoader(data_folder_name="uploads")
+        
+        file_path = f"{request.file_id}_raw.csv"
+        print(f"[SCAN] Loading CSV: {file_path}")
+        df = loader.load_csv(file_path)
 
-    if df is None:
-        raise HTTPException(status_code=404, detail="File not found or empty")
+        if df is None:
+            raise HTTPException(status_code=404, detail="File not found or empty")
 
-    scanner = DataScanner(df)
-    report = scanner.run_health_check()
-    clean_report = convert_numpy_types(report)
-    return clean_report
+        print(f"[SCAN] DataFrame loaded: {df.shape[0]} rows, {df.shape[1]} columns")
+        scanner = DataScanner(df)
+        report = scanner.run_health_check()
+        clean_report = convert_numpy_types(report)
+
+        preview_df = df.head(5).replace({float('nan'): None})
+        clean_report["dataset_preview"] = preview_df.to_dict(orient="records")
+        print(f"[SCAN] Scan completed successfully")
+        return clean_report
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[SCAN] Error during scan: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
 
 @router.post("/clean", response_model=CleanResponse)
 def clean_data(request: CleanRequest):
