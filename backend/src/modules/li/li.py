@@ -1,9 +1,9 @@
 import pandas as pd
 import sys
 import os
-from query_generator import QueryGenerator
-from trends_fetcher import TrendsFetcher
-from analyzer import CorrelationAnalyzer
+from .query_generator import QueryGenerator
+from .trends_fetcher import TrendsFetcher
+from .analyzer import CorrelationAnalyzer
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, '../../../../'))
@@ -69,6 +69,31 @@ class LeadingIndicatorsModule:
         final_filename = f"correlations_{target_col}_{geo}.csv"
         results_df.to_csv(final_filename, index=False)
         print(f"\n[*] Звіт по кореляціям збережено у: {final_filename}")
+    
+    def run_api(self, primary_df: pd.DataFrame, target_col: str, region: str, geo: str, extra: str, file_id: str):
+        """Версія для виклику через FastAPI"""
+        print(f"\n[*] Gemini генерує пошукові запити для {target_col}...")
+        queries = self.generator.generate(target_col, region, extra_info=extra)
+
+        if not queries:
+            raise ValueError("Не вдалося згенерувати запити.")
+
+        trends_df = self.fetcher.fetch_data(queries, geo)
+        if trends_df.empty:
+            raise ValueError("Дані Google Trends відсутні.")
+
+        outputs_dir = self.loader.data_dir.parent / "outputs"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        
+        trends_filename = outputs_dir / f"raw_trends_{file_id}.csv"
+        trends_df.to_csv(trends_filename)
+
+        results_df = self.analyzer.calculate_lags(primary_df, target_col, trends_df)
+        
+        final_filename = outputs_dir / f"correlations_{file_id}.csv"
+        results_df.to_csv(final_filename, index=False)
+
+        return queries, str(trends_filename), str(final_filename), results_df
 
 if __name__ == "__main__":
     app = LeadingIndicatorsModule()
