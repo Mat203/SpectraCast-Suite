@@ -187,6 +187,11 @@ export const LeadingIndicatorsView: React.FC = () => {
     setError(null);
   };
 
+  const getDownloadUrl = (pathFromBackend: string) => {
+    const fileName = pathFromBackend.split('/').pop() || pathFromBackend;
+    return `http://127.0.0.1:8000/api/li/download/${encodeURIComponent(fileName)}`;
+  };
+
   return (
     <div className="flex-1 h-full bg-slate-100 p-4 md:p-8 overflow-auto">
       <div className="mx-auto w-full max-w-7xl">
@@ -392,6 +397,21 @@ export const LeadingIndicatorsView: React.FC = () => {
                   The backend did not return any top results rows.
                 </p>
               )}
+
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <a
+                  href={getDownloadUrl(result.trends_file)}
+                  className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700"
+                >
+                  Download Raw Trends CSV
+                </a>
+                <a
+                  href={getDownloadUrl(result.correlations_file)}
+                  className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Download Correlations CSV
+                </a>
+              </div>
 
               {error && (
                 <p className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
