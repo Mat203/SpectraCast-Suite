@@ -40,24 +40,28 @@ def generate_plot(request: GeneratePlotRequest):
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty")
 
-    backend_dir = Path(__file__).resolve().parents[4]
+    backend_dir = Path(__file__).resolve().parents[3]
 
     engine = PlotEngine(
         output_dir=backend_dir / "outputs",
         config_dir=backend_dir / "style_config"
     )
 
-    if request.style_filename:
-        engine.apply_style(request.style_filename)
+    if request.style_filename or request.style_name:
+        engine.apply_style(request.style_filename or request.style_name)
 
     file_id_safe = os.path.basename(request.file_id)
     output_filename = f"plot_{file_id_safe}.png"
+    
+    x_col = request.x_col or request.x
+    y_cols = request.y_cols if request.y_cols else ([request.y] if request.y else [])
+    chart_type = request.chart_type or request.plot_type
 
     output_path = engine.generate_plot(
         df=df,
-        x_col=request.x_col,
-        y_cols=request.y_cols,
-        chart_type=request.chart_type,
+        x_col=x_col,
+        y_cols=y_cols,
+        chart_type=chart_type,
         filename=output_filename
     )
 
