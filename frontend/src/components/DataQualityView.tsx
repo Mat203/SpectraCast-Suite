@@ -299,9 +299,9 @@ export const DataQualityView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <div className="w-full overflow-x-auto overflow-y-auto max-h-[60vh] rounded-xl border border-slate-200">
                 <table className="min-w-full border-collapse text-sm">
-                  <thead className="sticky top-0 bg-slate-100 text-slate-700">
+                  <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm text-slate-700">
                     <tr>
                       {previewColumns.map((column) => (
                         <th key={column} className="whitespace-nowrap border-b border-slate-200 px-4 py-3 text-left font-semibold">
@@ -314,7 +314,7 @@ export const DataQualityView: React.FC = () => {
                     {report.dataset_preview?.map((row, rowIndex) => (
                       <tr key={`row-${rowIndex}`} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                         {previewColumns.map((column) => (
-                          <td key={`${rowIndex}-${column}`} className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-slate-700">
+                          <td key={`${rowIndex}-${column}`} className="whitespace-nowrap font-mono text-sm border-b border-slate-100 px-4 py-3 text-slate-700">
                             {formatCellValue(row[column])}
                           </td>
                         ))}

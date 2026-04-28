@@ -46,8 +46,6 @@ class LeadingIndicatorsModule:
             print("Не вдалося згенерувати запити.")
             return
 
-        queries_df = pd.DataFrame(queries, columns=['Query'])
-        queries_filename = f"queries_{target_col}_{geo}.csv"
 
         trends_df = self.fetcher.fetch_data(queries, geo)
         

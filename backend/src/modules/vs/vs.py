@@ -1,4 +1,6 @@
 import json
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -11,6 +13,8 @@ class PlotEngine:
         self.style_dict = {}
 
     def apply_style(self, style_filename: str):
+        if not style_filename.endswith('.json'):
+            style_filename += '.json'
         config_path = self.config_dir / style_filename
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
@@ -22,7 +26,11 @@ class PlotEngine:
 
     def generate_plot(self, df: pd.DataFrame, x_col: str, y_cols: list, chart_type: str, filename: str):
         fig, ax = plt.subplots()
-        x_data = df[x_col] if x_col else df.index
+        
+        if x_col and x_col in df.columns:
+            x_data = df[x_col]
+        else:
+            x_data = df.index
 
         if chart_type == '2':
             indices = np.arange(len(x_data))
@@ -51,6 +59,7 @@ class PlotEngine:
         
         output_path = self.output_dir / filename
         fig.tight_layout()
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output_path)
         plt.close(fig)
         return output_path

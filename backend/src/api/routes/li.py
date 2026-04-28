@@ -2,11 +2,16 @@ from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
 from backend.src.api.models.li import RunIndicatorsRequest, RunIndicatorsResponse
 from backend.src.core.loader import DataLoader
+from fastapi.responses import FileResponse
+from pathlib import Path
 import numpy as np
 
 from backend.src.modules.li.li import LeadingIndicatorsModule 
 
 router = APIRouter()
+
+BACKEND_DIR = Path(__file__).resolve().parents[3]
+OUTPUTS_DIR = BACKEND_DIR / "outputs"
 
 def convert_numpy_types(obj: Any) -> Any:
     if isinstance(obj, dict):
@@ -44,8 +49,8 @@ def run_leading_indicators(request: RunIndicatorsRequest):
             primary_df=df,
             target_col=request.target_col,
             region=request.region,
-            geo=request.geo,
-            extra=request.extra_info,
+            geo=request.geo or "UA",
+            extra=request.extra_info or "",
             file_id=request.file_id
         )
 
@@ -67,3 +72,23 @@ def run_leading_indicators(request: RunIndicatorsRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Leading Indicators module failed: {str(e)}")
+
+
+@router.get("/download/{filename}")
+def download_output_file(filename: str):
+    safe_name = Path(filename).name
+    if safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    if not safe_name.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV downloads are supported")
+
+    file_path = OUTPUTS_DIR / safe_name
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Requested file was not found")
+
+    return FileResponse(
+        path=file_path,
+        media_type="text/csv",
+        filename=safe_name,
+    )
