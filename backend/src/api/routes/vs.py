@@ -8,6 +8,22 @@ from backend.src.modules.vs.vs import PlotEngine
 
 router = APIRouter()
 
+from pydantic import BaseModel
+from typing import List
+
+class StylesResponse(BaseModel):
+    styles: List[str]
+
+@router.get("/styles", response_model=StylesResponse)
+def get_styles():
+    from backend.src.modules.vs.style_manager import StyleManager
+    manager = StyleManager()
+    styles = []
+    if manager.config_dir.exists():
+        for file in manager.config_dir.glob("*.json"):
+            styles.append(file.stem)
+    return StylesResponse(styles=styles)
+
 @router.post("/generate", response_model=GeneratePlotResponse)
 def generate_plot(request: GeneratePlotRequest):
     if request.is_cleaned:

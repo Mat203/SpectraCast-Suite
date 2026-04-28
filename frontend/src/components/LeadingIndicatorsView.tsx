@@ -10,7 +10,7 @@ interface LeadingIndicatorsResponse {
   queries_generated: string[];
   trends_file: string;
   correlations_file: string;
-  top_results: Record<string, any>[];
+  top_results: Record<string, unknown>[];
 }
 
 export const LeadingIndicatorsView: React.FC = () => {

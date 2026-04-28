@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type ModuleKey = 'dq' | 'li';
+export type ModuleKey = 'dq' | 'li' | 'vs';
 
 interface SidebarProps {
   activeModule: ModuleKey;
@@ -9,7 +9,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onModuleChange }) => {
   const navItemClass = (isActive: boolean) =>
-    `w-full px-3 py-2 rounded-md font-medium transition-colors text-left ${
+    `w-full px-3 py-2 rounded-md font-medium transition-colors text-left flex justify-between items-center ${
       isActive
         ? 'bg-indigo-600 text-white'
         : 'text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -30,10 +30,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onModuleChange }
           Data Quality
         </button>
 
-        <div className="px-3 py-2 text-slate-500 rounded-md font-medium cursor-not-allowed flex justify-between items-center group relative" title="Coming Soon">
+        <button
+          type="button"
+          className={navItemClass(activeModule === 'vs')}
+          onClick={() => onModuleChange('vs')}
+        >
           Visual Standardizer
-          <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded-full text-slate-400">Soon</span>
-        </div>
+        </button>
 
         <button
           type="button"
