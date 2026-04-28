@@ -24,6 +24,11 @@ export const DataQualityView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ScanReport | null>(null);
 
+  const [selectedOutlierCol, setSelectedOutlierCol] = useState<string | null>(null);
+  const [isOutlierModalOpen, setIsOutlierModalOpen] = useState(false);
+  const [outlierStrategy, setOutlierStrategy] = useState('clip_iqr');
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const previewColumns = useMemo(() => {
@@ -148,6 +153,52 @@ export const DataQualityView: React.FC = () => {
       setError(message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleOutlierClick = (column: string) => {
+    setSelectedOutlierCol(column);
+    setOutlierStrategy('clip_iqr');
+    setIsOutlierModalOpen(true);
+  };
+
+  const handleApplyOutlierStrategy = async () => {
+    if (!file || !selectedOutlierCol) return;
+
+    setIsProcessingAction(true);
+    setError(null);
+
+    try {
+      const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
+        method: 'POST',
+        body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })(),
+      });
+
+      if (!uploadResponse.ok) throw new Error('Upload failed');
+      const uploadResult = await uploadResponse.json() as UploadResponse;
+
+      const actionRes = await fetch('http://127.0.0.1:8000/api/dq/handle-outliers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_id: uploadResult.file_id,
+          column: selectedOutlierCol,
+          strategy: outlierStrategy
+        })
+      });
+
+      if (!actionRes.ok) {
+        const errorData = await actionRes.json() as { detail?: string };
+        throw new Error(errorData.detail || 'Failed to handle outliers');
+      }
+
+      setIsOutlierModalOpen(false);
+      await handleScan(); // Rescan to refresh
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setIsProcessingAction(false);
     }
   };
 
@@ -276,9 +327,19 @@ export const DataQualityView: React.FC = () => {
                   {Object.keys(report.outliers ?? {}).length > 0 ? (
                     <ul className="mt-2 space-y-2">
                       {Object.entries(report.outliers).map(([column, count]) => (
-                        <li key={column} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                        <li 
+                          key={column} 
+                          onClick={() => handleOutlierClick(column)}
+                          className="group flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 hover:border-sky-200 transition-all"
+                          title="Click to handle outliers"
+                        >
                           <span className="font-medium text-slate-700">{column}</span>
-                          <span className="rounded-md bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">{count}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-md bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">{count}</span>
+                            <svg className="h-4 w-4 text-slate-400 group-hover:text-sky-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -325,6 +386,63 @@ export const DataQualityView: React.FC = () => {
               </div>
             </article>
           </section>
+        )}
+
+        {isOutlierModalOpen && selectedOutlierCol && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+              <h2 className="text-xl font-bold text-slate-800">Handle Outliers</h2>
+              <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
+                Column: <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{selectedOutlierCol}</span>
+              </p>
+
+              <div className="mt-5">
+                <label htmlFor="outlier-strategy" className="mb-2 block text-sm font-medium text-slate-700">
+                  Select Strategy
+                </label>
+                <select
+                  id="outlier-strategy"
+                  value={outlierStrategy}
+                  onChange={(e) => setOutlierStrategy(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                >
+                  <option value="clip_iqr">Clip to IQR Bounds</option>
+                  <option value="mean">Replace with Mean</option>
+                  <option value="median">Replace with Median</option>
+                  <option value="drop">Drop Rows</option>
+                </select>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsOutlierModalOpen(false)}
+                  disabled={isProcessingAction}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyOutlierStrategy}
+                  disabled={isProcessingAction}
+                  className="inline-flex items-center rounded-lg bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:bg-sky-400"
+                >
+                  {isProcessingAction ? (
+                    <>
+                      <svg className="mr-2 h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Applying...
+                    </>
+                  ) : (
+                    'Apply & Rescan'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
