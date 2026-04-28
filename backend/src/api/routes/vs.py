@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 import base64
 import os
 from pathlib import Path
@@ -68,12 +69,33 @@ def generate_plot(request: GeneratePlotRequest):
     if not output_path or not output_path.exists():
         raise HTTPException(status_code=500, detail="Failed to generate plot")
 
-    with open(output_path, "rb") as image_file:
-        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-
     return GeneratePlotResponse(
         status="success",
-        plot_base64=encoded_string
+        plot_filename=output_filename
+    )
+
+@router.get("/plot/{filename}")
+def get_plot(filename: str):
+    backend_dir = Path(__file__).resolve().parents[3]
+    plot_path = backend_dir / "outputs" / filename
+    
+    if not plot_path.exists():
+        raise HTTPException(status_code=404, detail="Plot not found")
+        
+    return FileResponse(plot_path)
+
+@router.get("/download/{filename}")
+def download_plot(filename: str):
+    backend_dir = Path(__file__).resolve().parents[3]
+    plot_path = backend_dir / "outputs" / filename
+    
+    if not plot_path.exists():
+        raise HTTPException(status_code=404, detail="Plot not found")
+        
+    return FileResponse(
+        path=plot_path,
+        media_type="image/png",
+        filename=filename,
     )
 
 @router.post("/standardize-code", response_model=StandardizeCodeResponse)

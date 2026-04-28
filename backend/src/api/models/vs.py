@@ -19,7 +19,7 @@ class GeneratePlotRequest(BaseModel):
 
 class GeneratePlotResponse(BaseModel):
     status: str
-    plot_base64: str
+    plot_filename: str
 
 class StandardizeCodeRequest(BaseModel):
     raw_code: str

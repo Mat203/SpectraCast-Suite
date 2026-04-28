@@ -4,7 +4,7 @@ type Tab = 'plot_generator' | 'code_standardizer' | 'style_creator';
 
 interface GeneratePlotResponse {
   status: string;
-  plot_path: string;
+  plot_filename: string;
 }
 
 export const VisualStandardizerView: React.FC = () => {
@@ -380,9 +380,28 @@ export const VisualStandardizerView: React.FC = () => {
               </div>
 
               {plotResult && (
-                 <div className="mt-6 bg-green-50 border border-green-200 rounded-md p-4">
-                    <h4 className="text-green-800 font-medium mb-1">Plot Generated Successfully</h4>
-                    <p className="text-green-600 text-sm break-all">Saved to: {plotResult.plot_path}</p>
+                 <div className="mt-6 bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center">
+                      <h4 className="text-slate-800 font-medium">Generated Plot Preview</h4>
+                      <a 
+                        href={`http://127.0.0.1:8000/api/vs/download/${plotResult.plot_filename}`}
+                        download={plotResult.plot_filename}
+                        className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center gap-1"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download Image
+                      </a>
+                    </div>
+                    <div className="p-4 bg-slate-50 flex justify-center custom-plot-preview">
+                      <img 
+                        src={`http://127.0.0.1:8000/api/vs/plot/${plotResult.plot_filename}`} 
+                        alt="Generated Plot" 
+                        className="max-w-full h-auto rounded shadow-sm border border-slate-200"
+                        style={{ maxHeight: '500px' }}
+                      />
+                    </div>
                  </div>
               )}
 
