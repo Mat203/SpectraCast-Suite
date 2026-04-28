@@ -29,6 +29,8 @@ export const DataQualityView: React.FC = () => {
   const [outlierStrategy, setOutlierStrategy] = useState('clip_iqr');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
 
+  const [fileId, setFileId] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const previewColumns = useMemo(() => {
@@ -68,6 +70,7 @@ export const DataQualityView: React.FC = () => {
 
     setError(null);
     setReport(null);
+    setFileId(null);
     setFile(nextFile);
   };
 
@@ -93,8 +96,8 @@ export const DataQualityView: React.FC = () => {
     fileInputRef.current?.click();
   };
 
-  const handleScan = async () => {
-    if (!file) {
+  const handleScan = async (useExistingFile: boolean = false) => {
+    if (!file && !useExistingFile) {
       setError('Select a .csv file before scanning.');
       return;
     }
@@ -103,22 +106,30 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      let currentFileId = fileId;
 
-      const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      if (!useExistingFile || !currentFileId) {
+        if (!file) throw new Error('No file selected.');
+        const formData = new FormData();
+        formData.append('file', file);
 
-      if (!uploadResponse.ok) {
-        throw new Error(`Upload failed (${uploadResponse.status})`);
-      }
+        const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
 
-      const uploadResult = (await uploadResponse.json()) as UploadResponse;
+        if (!uploadResponse.ok) {
+          throw new Error(`Upload failed (${uploadResponse.status})`);
+        }
 
-      if (!uploadResult.file_id) {
-        throw new Error('Upload succeeded but file_id was missing.');
+        const uploadResult = (await uploadResponse.json()) as UploadResponse;
+
+        if (!uploadResult.file_id) {
+          throw new Error('Upload succeeded but file_id was missing.');
+        }
+
+        currentFileId = uploadResult.file_id;
+        setFileId(currentFileId);
       }
 
       const scanResponse = await fetch('http://127.0.0.1:8000/api/dq/scan', {
@@ -126,7 +137,7 @@ export const DataQualityView: React.FC = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ file_id: uploadResult.file_id }),
+        body: JSON.stringify({ file_id: currentFileId }),
       });
 
       if (!scanResponse.ok) {
@@ -163,25 +174,33 @@ export const DataQualityView: React.FC = () => {
   };
 
   const handleApplyOutlierStrategy = async () => {
-    if (!file || !selectedOutlierCol) return;
+    if (!selectedOutlierCol) return;
 
     setIsProcessingAction(true);
     setError(null);
 
     try {
-      const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
-        method: 'POST',
-        body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })(),
-      });
+      let currentFileId = fileId;
+      
+      if (!currentFileId && file) {
+        const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
+          method: 'POST',
+          body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })(),
+        });
 
-      if (!uploadResponse.ok) throw new Error('Upload failed');
-      const uploadResult = await uploadResponse.json() as UploadResponse;
+        if (!uploadResponse.ok) throw new Error('Upload failed');
+        const uploadResult = await uploadResponse.json() as UploadResponse;
+        currentFileId = uploadResult.file_id;
+        setFileId(currentFileId);
+      }
+      
+      if (!currentFileId) throw new Error('No file available for processing');
 
       const actionRes = await fetch('http://127.0.0.1:8000/api/dq/handle-outliers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          file_id: uploadResult.file_id,
+          file_id: currentFileId,
           column: selectedOutlierCol,
           strategy: outlierStrategy
         })
@@ -193,7 +212,7 @@ export const DataQualityView: React.FC = () => {
       }
 
       setIsOutlierModalOpen(false);
-      await handleScan(); // Rescan to refresh
+      await handleScan(true); // Rescan existing file_id, don't re-upload local file
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -251,7 +270,7 @@ export const DataQualityView: React.FC = () => {
           <div className="mt-5 flex flex-wrap items-center gap-4">
             <button
               type="button"
-              onClick={handleScan}
+              onClick={() => handleScan(false)}
               disabled={!file || isLoading}
               className={`inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors ${!file || isLoading ? 'bg-slate-300 text-slate-600 cursor-not-allowed' : 'bg-sky-600 text-white hover:bg-sky-700'}`}
             >
@@ -267,6 +286,20 @@ export const DataQualityView: React.FC = () => {
                 'Upload & Scan'
               )}
             </button>
+
+            {fileId && report && (
+              <a
+                href={`http://127.0.0.1:8000/api/dq/download/${fileId}`}
+                download={`dataset_${fileId}.csv`}
+                className="inline-flex items-center rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors"
+                title="Download the updated dataset"
+              >
+                <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+                Download Updated Dataset
+              </a>
+            )}
 
             {file && (
               <span className="text-sm text-slate-500">

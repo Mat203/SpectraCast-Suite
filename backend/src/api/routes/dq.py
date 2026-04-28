@@ -4,6 +4,7 @@ from backend.src.api.models.dq import ScanRequest, CleanRequest, CleanResponse, 
 from backend.src.core.loader import DataLoader
 from backend.src.modules.dq.scanner import DataScanner
 from backend.src.modules.dq.cleaner import DataCleaner
+from fastapi.responses import FileResponse
 from pathlib import Path
 import numpy as np
 from scipy import stats
@@ -110,6 +111,10 @@ def handle_outliers(request: OutlierActionRequest):
     if not np.issubdtype(col_data.dtype, np.number):
         raise HTTPException(status_code=400, detail=f"Column '{request.column}' is not numeric")
 
+    # Cast to float to avoid LossySetitemError/TypeError when inserting floats (mean/median) into int columns
+    df[request.column] = df[request.column].astype(float)
+    col_data = df[request.column]
+
     Q1 = col_data.quantile(0.25)
     Q3 = col_data.quantile(0.75)
     IQR = Q3 - Q1
@@ -132,6 +137,20 @@ def handle_outliers(request: OutlierActionRequest):
         raise HTTPException(status_code=400, detail="Invalid strategy")
 
     save_path = loader.data_dir / file_path
-    df.to_csv(save_path)
+    df.to_csv(save_path, index=False)
 
     return {"status": "success", "message": f"Successfully applied {request.strategy} to {request.column}"}
+
+@router.get("/download/{file_id}")
+def download_dataset(file_id: str):
+    loader = DataLoader(data_folder_name="uploads")
+    
+    file_path = loader.data_dir / f"{file_id}_raw.csv"
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    return FileResponse(
+        path=file_path,
+        media_type="text/csv",
+        filename=f"updated_dataset_{file_id}.csv",
+    )
