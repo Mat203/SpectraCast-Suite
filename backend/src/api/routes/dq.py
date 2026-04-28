@@ -42,7 +42,7 @@ def scan_data(request: ScanRequest):
         report = scanner.run_health_check()
         clean_report = convert_numpy_types(report)
 
-        preview_df = df.head(5).replace({float('nan'): None})
+        preview_df = df.reset_index().replace({float('nan'): None})
         clean_report["dataset_preview"] = preview_df.to_dict(orient="records")
         print(f"[SCAN] Scan completed successfully")
         return clean_report
