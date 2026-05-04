@@ -129,6 +129,7 @@ class DataScanner:
             "rows": len(self.df),
             "columns": list(self.df.columns),
             "outliers": {},
+            "outlier_strategy_recommendations": {},
             "missing_values": self.df.isna().sum().to_dict()
         }
 
@@ -141,7 +142,7 @@ class DataScanner:
                 "display_frequency": "Unknown (Irregular)",
                 "missing_dates_count": 0,
                 "missing_dates": [],
-                "time_series_message": "Часова колонка не знайдена. Аналіз часових рядів пропущено",
+                "time_series_message": "Time column not found. Time series analysis skipped.",
             })
 
         numeric_cols = self.df.select_dtypes(include=[np.number]).columns
@@ -152,6 +153,35 @@ class DataScanner:
             
             if outliers_count > 0:
                 report["outliers"][col] = outliers_count
+
+            series = self.df[col].dropna()
+            if series.empty:
+                continue
+
+            skew_value = float(series.skew())
+            abs_skew = abs(skew_value)
+
+            if abs_skew > 1.0:
+                strategy = "iqr_clip"
+                reasoning = (
+                    "High skewness in the time series. The IQR method minimizes the impact of extreme values without losing data points"
+                )
+            elif abs_skew > 0.5:
+                strategy = "median"
+                reasoning = (
+                    "Moderate skewness. Using the median provides robustness against outliers that distort the mean"
+                )
+            else:
+                strategy = "mean"
+                reasoning = (
+                    "Distribution is close to symmetric. Using the mean is statistically optimal for filling anomalies"
+                )
+
+            report["outlier_strategy_recommendations"][col] = {
+                "skew": skew_value,
+                "strategy": strategy,
+                "reasoning": reasoning,
+            }
 
         return report
 
@@ -179,3 +209,8 @@ class DataScanner:
                 print(f"  - {col}: {count} outliers")
         else:
             print("\nNo extreme outliers detected.")
+
+        if report.get("outlier_strategy_recommendations"):
+            print("\nOutlier Strategy Recommendations (Skew-based):")
+            for col, rec in report["outlier_strategy_recommendations"].items():
+                print(f"  - {col}: {rec['strategy']} (skew={rec['skew']:.2f})")
