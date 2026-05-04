@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Any
+from fastapi import APIRouter, HTTPException, Depends, Header
+from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from backend.src.api.models.li import RunIndicatorsRequest, RunIndicatorsResponse
 from backend.src.api.db import get_db
@@ -34,6 +34,7 @@ def convert_numpy_types(obj: Any) -> Any:
 @router.post("/run", response_model=RunIndicatorsResponse)
 def run_leading_indicators(
     request: RunIndicatorsRequest,
+    x_llm_api_key: Optional[str] = Header(default=None, alias="x-llm-api-key"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -61,7 +62,8 @@ def run_leading_indicators(
             region=request.region,
             geo=request.geo or "UA",
             extra=request.extra_info or "",
-            file_id=request.file_id
+            file_id=request.file_id,
+            user_api_key=x_llm_api_key,
         )
 
         top_results_df = results_df.head(10).replace({float('nan'): None})

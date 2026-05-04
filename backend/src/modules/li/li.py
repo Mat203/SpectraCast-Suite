@@ -1,6 +1,7 @@
 import pandas as pd
 import sys
 import os
+from typing import Optional
 from .query_generator import QueryGenerator
 from .trends_fetcher import TrendsFetcher
 from .analyzer import CorrelationAnalyzer
@@ -68,10 +69,19 @@ class LeadingIndicatorsModule:
         results_df.to_csv(final_filename, index=False)
         print(f"\n[*] Звіт по кореляціям збережено у: {final_filename}")
     
-    def run_api(self, primary_df: pd.DataFrame, target_col: str, region: str, geo: str, extra: str, file_id: str):
-        """Версія для виклику через FastAPI"""
-        print(f"\n[*] Gemini генерує пошукові запити для {target_col}...")
-        queries = self.generator.generate(target_col, region, extra_info=extra)
+    def run_api(
+        self,
+        primary_df: pd.DataFrame,
+        target_col: str,
+        region: str,
+        geo: str,
+        extra: str,
+        file_id: str,
+        user_api_key: Optional[str] = None,
+    ):
+        print(f"\n[*] NOT OUR GEMINI Gemini генерує пошукові запити для {target_col}...")
+        generator = QueryGenerator(api_key=user_api_key) if user_api_key else self.generator
+        queries = generator.generate(target_col, region, extra_info=extra)
 
         if not queries:
             raise ValueError("Не вдалося згенерувати запити.")
