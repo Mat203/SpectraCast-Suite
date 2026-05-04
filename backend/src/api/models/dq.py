@@ -20,6 +20,18 @@ class OutlierActionRequest(BaseModel):
     column: str
     strategy: str
 
+class OutlierPreviewRequest(BaseModel):
+    file_id: str
+    column: str
+    strategy: str
+
+class OutlierPreviewResponse(BaseModel):
+    column: str
+    strategy: str
+    x: List[str]
+    before: List[Optional[float]]
+    after: List[Optional[float]]
+
 class MissingValueActionRequest(BaseModel):
     file_id: str
     column: str

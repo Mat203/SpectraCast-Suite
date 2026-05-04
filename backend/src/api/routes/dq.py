@@ -1,7 +1,15 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
 from sqlalchemy.orm import Session
-from backend.src.api.models.dq import ScanRequest, CleanRequest, CleanResponse, OutlierActionRequest, MissingValueActionRequest
+from backend.src.api.models.dq import (
+    ScanRequest,
+    CleanRequest,
+    CleanResponse,
+    OutlierActionRequest,
+    MissingValueActionRequest,
+    OutlierPreviewRequest,
+    OutlierPreviewResponse,
+)
 from backend.src.api.db import get_db
 from backend.src.api.db_models import User
 from backend.src.api.deps import get_current_user
@@ -167,6 +175,73 @@ def handle_outliers(
         df.to_csv(save_path, index=False)
 
     return {"status": "success", "message": f"Successfully applied {request.strategy} to {request.column}"}
+
+@router.post("/preview-outliers", response_model=OutlierPreviewResponse)
+def preview_outliers(
+    request: OutlierPreviewRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner(db, current_user.id, request.file_id)
+    loader = DataLoader(data_folder_name="uploads")
+    file_path = f"{request.file_id}_raw.csv"
+    df = loader.load_csv(file_path)
+
+    if df is None:
+        raise HTTPException(status_code=404, detail="File not found or empty")
+
+    if request.column not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{request.column}' not found")
+
+    col_data = df[request.column]
+    if not np.issubdtype(col_data.dtype, np.number):
+        raise HTTPException(status_code=400, detail=f"Column '{request.column}' is not numeric")
+
+    series = col_data.astype(float)
+    q1 = series.quantile(0.25)
+    q3 = series.quantile(0.75)
+    iqr = q3 - q1
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+    outlier_mask = (series < lower_bound) | (series > upper_bound)
+
+    after_series = series.copy()
+    if request.strategy == 'clip_iqr':
+        after_series = after_series.clip(lower=lower_bound, upper=upper_bound)
+    elif request.strategy == 'mean':
+        mean_val = series.mean()
+        after_series.loc[outlier_mask] = mean_val
+    elif request.strategy == 'median':
+        median_val = series.median()
+        after_series.loc[outlier_mask] = median_val
+    elif request.strategy == 'drop':
+        after_series.loc[outlier_mask] = np.nan
+    else:
+        raise HTTPException(status_code=400, detail="Invalid strategy")
+
+    if isinstance(df.index, pd.DatetimeIndex):
+        x_values = [ts.isoformat() for ts in df.index]
+    else:
+        x_values = [str(idx) for idx in range(len(df))]
+
+    before_values = [None if pd.isna(v) else float(v) for v in series.tolist()]
+    after_values = [None if pd.isna(v) else float(v) for v in after_series.tolist()]
+
+    max_points = 300
+    if len(x_values) > max_points:
+        indices = np.linspace(0, len(x_values) - 1, num=max_points, dtype=int)
+        indices = np.unique(indices)
+        x_values = [x_values[i] for i in indices]
+        before_values = [before_values[i] for i in indices]
+        after_values = [after_values[i] for i in indices]
+
+    return OutlierPreviewResponse(
+        column=request.column,
+        strategy=request.strategy,
+        x=x_values,
+        before=before_values,
+        after=after_values,
+    )
 
 @router.post("/handle-missing")
 def handle_missing(

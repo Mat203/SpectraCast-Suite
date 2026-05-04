@@ -8,6 +8,14 @@ interface UploadResponse {
   file_id: string;
 }
 
+interface OutlierPreviewResponse {
+  column: string;
+  strategy: string;
+  x: string[];
+  before: Array<number | null>;
+  after: Array<number | null>;
+}
+
 interface ScanReport {
   rows: number;
   columns: string[];
@@ -42,6 +50,9 @@ export const DataQualityView: React.FC = () => {
   const [strategyPreview, setStrategyPreview] = useState<OutlierStrategyKey>('clip_iqr');
   const [isStrategyPanelVisible, setIsStrategyPanelVisible] = useState(false);
   const [isProcessingAction, setIsProcessingAction] = useState(false);
+  const [previewData, setPreviewData] = useState<OutlierPreviewResponse | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const [selectedMissingCol, setSelectedMissingCol] = useState<string | null>(null);
   const [isMissingModalOpen, setIsMissingModalOpen] = useState(false);
@@ -74,6 +85,101 @@ export const DataQualityView: React.FC = () => {
     }
 
     return String(value);
+  };
+
+  const renderPreviewChart = () => {
+    if (!previewData) {
+      return null;
+    }
+
+    const combinedValues = [...previewData.before, ...previewData.after].filter(
+      (value): value is number => typeof value === 'number' && !Number.isNaN(value),
+    );
+
+    if (combinedValues.length === 0) {
+      return (
+        <div className="flex h-40 items-center justify-center text-xs text-slate-500">
+          Not enough numeric values to plot.
+        </div>
+      );
+    }
+
+    const minY = Math.min(...combinedValues);
+    const maxY = Math.max(...combinedValues);
+    const range = maxY - minY || 1;
+    const width = 440;
+    const height = 176;
+
+    const formatXAxisLabel = (value: string) => {
+      if (!value) {
+        return '';
+      }
+      const [datePart] = value.split('T');
+      return datePart || value;
+    };
+
+    const startLabel = formatXAxisLabel(previewData.x[0] ?? '');
+    const endLabel = formatXAxisLabel(previewData.x[previewData.x.length - 1] ?? '');
+
+    const buildPath = (values: Array<number | null>) => {
+      let path = '';
+      let started = false;
+      const lastIndex = values.length - 1;
+
+      values.forEach((value, index) => {
+        if (value === null || Number.isNaN(value)) {
+          started = false;
+          return;
+        }
+
+        const x = lastIndex === 0 ? 0 : (index / lastIndex) * width;
+        const y = height - ((value - minY) / range) * height;
+
+        if (!started) {
+          path += `M ${x} ${y}`;
+          started = true;
+        } else {
+          path += ` L ${x} ${y}`;
+        }
+      });
+
+      return path;
+    };
+
+    return (
+      <div className="space-y-2">
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full">
+          <path
+            d={buildPath(previewData.before)}
+            fill="none"
+            stroke="#94a3b8"
+            strokeWidth={2}
+            strokeDasharray="6 4"
+          />
+          <path
+            d={buildPath(previewData.after)}
+            fill="none"
+            stroke="#3b82f6"
+            strokeWidth={2.5}
+          />
+        </svg>
+        <div className="flex items-center justify-between text-[10px] text-slate-400">
+          <span>{startLabel}</span>
+          <span className="uppercase tracking-[0.2em]">Time</span>
+          <span>{endLabel}</span>
+        </div>
+        <div className="flex items-center gap-4 text-[11px] text-slate-500">
+          <span className="flex items-center gap-2">
+            <span className="h-0.5 w-6 border-b-2 border-dashed border-slate-400" />
+            Before
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="h-0.5 w-6 bg-blue-500" />
+            After
+          </span>
+        </div>
+      </div>
+    );
   };
 
   const handleFileSelect = (nextFile: File | null) => {
@@ -193,7 +299,28 @@ export const DataQualityView: React.FC = () => {
     setOutlierStrategy(nextStrategy);
     setStrategyPreview(nextStrategy);
     setIsStrategyPanelVisible(true);
+    setPreviewData(null);
+    setPreviewError(null);
     setIsOutlierModalOpen(true);
+  };
+
+  const resolveFileId = async () => {
+    let currentFileId = fileId;
+
+    if (!currentFileId && file) {
+      const uploadResponse = await apiFetch('/api/upload', {
+        method: 'POST',
+        body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })(),
+      });
+
+      if (!uploadResponse.ok) throw new Error('Upload failed');
+      const uploadResult = await uploadResponse.json() as UploadResponse;
+      currentFileId = uploadResult.file_id;
+      setFileId(currentFileId);
+    }
+
+    if (!currentFileId) throw new Error('No file available for processing');
+    return currentFileId;
   };
 
   const handleApplyOutlierStrategy = async () => {
@@ -203,21 +330,7 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
-      let currentFileId = fileId;
-      
-      if (!currentFileId && file) {
-        const uploadResponse = await apiFetch('/api/upload', {
-          method: 'POST',
-          body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })(),
-        });
-
-        if (!uploadResponse.ok) throw new Error('Upload failed');
-        const uploadResult = await uploadResponse.json() as UploadResponse;
-        currentFileId = uploadResult.file_id;
-        setFileId(currentFileId);
-      }
-      
-      if (!currentFileId) throw new Error('No file available for processing');
+      const currentFileId = await resolveFileId();
 
       const actionRes = await apiFetch('/api/dq/handle-outliers', {
         method: 'POST',
@@ -241,6 +354,37 @@ export const DataQualityView: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setIsProcessingAction(false);
+    }
+  };
+
+  const handlePreviewOutliers = async () => {
+    if (!selectedOutlierCol) return;
+    setIsPreviewLoading(true);
+    setPreviewError(null);
+
+    try {
+      const currentFileId = await resolveFileId();
+      const response = await apiFetch('/api/dq/preview-outliers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_id: currentFileId,
+          column: selectedOutlierCol,
+          strategy: outlierStrategy,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json() as { detail?: string };
+        throw new Error(errorData.detail || 'Preview failed');
+      }
+
+      const previewResult = (await response.json()) as OutlierPreviewResponse;
+      setPreviewData(previewResult);
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : 'Preview failed');
+    } finally {
+      setIsPreviewLoading(false);
     }
   };
 
@@ -543,8 +687,46 @@ export const DataQualityView: React.FC = () => {
 
         {isOutlierModalOpen && selectedOutlierCol && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-4xl grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="w-full max-w-7xl grid gap-4 lg:grid-cols-[1.1fr_0.95fr_0.9fr]">
+              <div className="rounded-2xl bg-white p-7 shadow-2xl">
+                <h3 className="text-lg font-semibold text-slate-900">Preview</h3>
+                <p className="mt-1 text-xs text-slate-500">Compare before vs after for this strategy.</p>
+
+                <div className="relative mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  {previewData ? (
+                    renderPreviewChart()
+                  ) : (
+                    <div className="space-y-3 blur-sm">
+                      <div className="h-3 w-3/4 rounded-full bg-slate-200" />
+                      <div className="h-3 w-5/6 rounded-full bg-slate-200" />
+                      <div className="h-28 rounded-lg bg-slate-100" />
+                      <div className="h-3 w-2/3 rounded-full bg-slate-200" />
+                    </div>
+                  )}
+
+                  {!previewData && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-white/70 backdrop-blur-sm">
+                      <button
+                        type="button"
+                        onClick={handlePreviewOutliers}
+                        disabled={isPreviewLoading}
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isPreviewLoading ? 'Generating preview...' : 'Preview data for this strategy'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {previewError && (
+                  <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                    {previewError}
+                  </p>
+                )}
+
+              </div>
+
+              <div className="rounded-2xl bg-white p-7 shadow-2xl">
                 <h2 className="text-xl font-bold text-slate-800">Handle Outliers</h2>
                 <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
                   Column: <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{selectedOutlierCol}</span>
@@ -569,6 +751,8 @@ export const DataQualityView: React.FC = () => {
                       setOutlierStrategy(nextValue);
                       setStrategyPreview(nextValue);
                       setIsStrategyPanelVisible(true);
+                      setPreviewData(null);
+                      setPreviewError(null);
                     }}
                     onFocus={() => setIsStrategyPanelVisible(true)}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
@@ -611,7 +795,7 @@ export const DataQualityView: React.FC = () => {
               </div>
 
               <aside
-                className={`rounded-2xl border border-slate-800/60 bg-slate-900 px-6 py-5 text-xs text-slate-100 shadow-2xl transition-all duration-200 ${
+                className={`rounded-2xl border border-slate-800/60 bg-slate-900 px-7 py-6 text-xs text-slate-100 shadow-2xl transition-all duration-200 ${
                   isStrategyPanelVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1'
                 }`}
               >
