@@ -1,5 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { apiFetch, downloadFile } from '../lib/api';
+import { STRATEGY_DESCRIPTIONS } from '../lib/outlierStrategies';
+import type { OutlierStrategyKey } from '../lib/outlierStrategies';
 
 interface UploadResponse {
   status: string;
@@ -36,7 +38,9 @@ export const DataQualityView: React.FC = () => {
 
   const [selectedOutlierCol, setSelectedOutlierCol] = useState<string | null>(null);
   const [isOutlierModalOpen, setIsOutlierModalOpen] = useState(false);
-  const [outlierStrategy, setOutlierStrategy] = useState('clip_iqr');
+  const [outlierStrategy, setOutlierStrategy] = useState<OutlierStrategyKey>('clip_iqr');
+  const [strategyPreview, setStrategyPreview] = useState<OutlierStrategyKey>('clip_iqr');
+  const [isStrategyPanelVisible, setIsStrategyPanelVisible] = useState(false);
   const [isProcessingAction, setIsProcessingAction] = useState(false);
 
   const [selectedMissingCol, setSelectedMissingCol] = useState<string | null>(null);
@@ -185,7 +189,10 @@ export const DataQualityView: React.FC = () => {
     const recommendation = report?.outlier_strategy_recommendations?.[column]?.strategy;
     const resolvedStrategy = recommendation === 'iqr_clip' ? 'clip_iqr' : recommendation;
     setSelectedOutlierCol(column);
-    setOutlierStrategy(resolvedStrategy || 'clip_iqr');
+    const nextStrategy = (resolvedStrategy || 'clip_iqr') as OutlierStrategyKey;
+    setOutlierStrategy(nextStrategy);
+    setStrategyPreview(nextStrategy);
+    setIsStrategyPanelVisible(true);
     setIsOutlierModalOpen(true);
   };
 
@@ -536,64 +543,89 @@ export const DataQualityView: React.FC = () => {
 
         {isOutlierModalOpen && selectedOutlierCol && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-              <h2 className="text-xl font-bold text-slate-800">Handle Outliers</h2>
-              <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
-                Column: <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{selectedOutlierCol}</span>
-              </p>
-              {report?.outlier_strategy_recommendations?.[selectedOutlierCol] && (
-                <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                  <span className="font-semibold text-slate-700">Recommended:</span>{' '}
-                  {report.outlier_strategy_recommendations[selectedOutlierCol].strategy} —{' '}
-                  {report.outlier_strategy_recommendations[selectedOutlierCol].reasoning}
+            <div className="w-full max-w-4xl grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-2xl bg-white p-6 shadow-2xl">
+                <h2 className="text-xl font-bold text-slate-800">Handle Outliers</h2>
+                <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
+                  Column: <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{selectedOutlierCol}</span>
                 </p>
-              )}
+                {report?.outlier_strategy_recommendations?.[selectedOutlierCol] && (
+                  <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    <span className="font-semibold text-slate-700">Recommended:</span>{' '}
+                    {report.outlier_strategy_recommendations[selectedOutlierCol].strategy} —{' '}
+                    {report.outlier_strategy_recommendations[selectedOutlierCol].reasoning}
+                  </p>
+                )}
 
-              <div className="mt-5">
-                <label htmlFor="outlier-strategy" className="mb-2 block text-sm font-medium text-slate-700">
-                  Select Strategy
-                </label>
-                <select
-                  id="outlier-strategy"
-                  value={outlierStrategy}
-                  onChange={(e) => setOutlierStrategy(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                >
-                  <option value="clip_iqr">Clip to IQR Bounds</option>
-                  <option value="mean">Replace with Mean</option>
-                  <option value="median">Replace with Median</option>
-                  <option value="drop">Drop Rows</option>
-                </select>
+                <div className="mt-5">
+                  <label htmlFor="outlier-strategy" className="mb-2 block text-sm font-medium text-slate-700">
+                    Select Strategy
+                  </label>
+                  <select
+                    id="outlier-strategy"
+                    value={outlierStrategy}
+                    onChange={(e) => {
+                      const nextValue = e.target.value as OutlierStrategyKey;
+                      setOutlierStrategy(nextValue);
+                      setStrategyPreview(nextValue);
+                      setIsStrategyPanelVisible(true);
+                    }}
+                    onFocus={() => setIsStrategyPanelVisible(true)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                  >
+                    <option value="clip_iqr">Clip to IQR Bounds</option>
+                    <option value="mean">Replace with Mean</option>
+                    <option value="median">Replace with Median</option>
+                    <option value="drop">Drop Rows</option>
+                  </select>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsOutlierModalOpen(false)}
+                    disabled={isProcessingAction}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyOutlierStrategy}
+                    disabled={isProcessingAction}
+                    className="inline-flex items-center rounded-lg bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:bg-sky-400"
+                  >
+                    {isProcessingAction ? (
+                      <>
+                        <svg className="mr-2 h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Applying...
+                      </>
+                    ) : (
+                      'Apply & Rescan'
+                    )}
+                  </button>
+                </div>
               </div>
 
-              <div className="mt-6 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsOutlierModalOpen(false)}
-                  disabled={isProcessingAction}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleApplyOutlierStrategy}
-                  disabled={isProcessingAction}
-                  className="inline-flex items-center rounded-lg bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:bg-sky-400"
-                >
-                  {isProcessingAction ? (
-                    <>
-                      <svg className="mr-2 h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Applying...
-                    </>
-                  ) : (
-                    'Apply & Rescan'
-                  )}
-                </button>
-              </div>
+              <aside
+                className={`rounded-2xl border border-slate-800/60 bg-slate-900 px-6 py-5 text-xs text-slate-100 shadow-2xl transition-all duration-200 ${
+                  isStrategyPanelVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1'
+                }`}
+              >
+                <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Strategy Guide</p>
+                <p className="mt-3 text-lg font-semibold text-white">
+                  {STRATEGY_DESCRIPTIONS[strategyPreview].title}
+                </p>
+                <p className="mt-2 text-[12px] text-slate-200">
+                  {STRATEGY_DESCRIPTIONS[strategyPreview].math}
+                </p>
+                <p className="mt-4 text-[12px] text-slate-300">
+                  {STRATEGY_DESCRIPTIONS[strategyPreview].when}
+                </p>
+              </aside>
             </div>
           </div>
         )}
