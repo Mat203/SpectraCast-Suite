@@ -4,6 +4,7 @@ import { Layout } from './components/Layout'
 import { DataQualityView } from './components/DataQualityView'
 import { LeadingIndicatorsView } from './components/LeadingIndicatorsView'
 import { VisualStandardizerView } from './components/VisualStandardizerView'
+import { Profile } from './components/Profile'
 import { Login } from './components/Login'
 import { Register } from './components/Register'
 import { ProtectedRoute } from './components/ProtectedRoute'
@@ -21,6 +22,16 @@ const Dashboard = () => {
   )
 }
 
+const ProfilePage = () => {
+  const [activeModule, setActiveModule] = useState<ModuleKey>('dq')
+
+  return (
+    <Layout activeModule={activeModule} onModuleChange={setActiveModule}>
+      <Profile />
+    </Layout>
+  )
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -33,6 +44,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <ProfilePage />
             </ProtectedRoute>
           }
         />

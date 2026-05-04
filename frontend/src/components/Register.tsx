@@ -131,7 +131,7 @@ export const Register: React.FC = () => {
             Build your analytics workspace
           </h1>
           <p className="mt-3 text-slate-600">
-            Create your account to unlock data quality scans, leading indicators, and visual standards.
+            Create your account.
           </p>
         </header>
 

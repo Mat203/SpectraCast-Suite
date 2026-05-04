@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 export type ModuleKey = 'dq' | 'li' | 'vs';
 
@@ -8,12 +9,21 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onModuleChange }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isProfileRoute = location.pathname.startsWith('/profile');
+
   const navItemClass = (isActive: boolean) =>
     `w-full px-3 py-2 rounded-md font-medium transition-colors text-left flex justify-between items-center ${
       isActive
         ? 'bg-indigo-600 text-white'
         : 'text-slate-300 hover:bg-slate-800 hover:text-white'
     }`;
+
+  const handleModuleClick = (module: ModuleKey) => {
+    onModuleChange(module);
+    navigate('/app');
+  };
 
   return (
     <aside className="w-64 h-full bg-slate-900 text-slate-300 flex flex-col flex-shrink-0">
@@ -24,26 +34,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onModuleChange }
       <nav className="flex-1 px-4 py-4 space-y-2">
         <button
           type="button"
-          className={navItemClass(activeModule === 'dq')}
-          onClick={() => onModuleChange('dq')}
+          className={navItemClass(!isProfileRoute && activeModule === 'dq')}
+          onClick={() => handleModuleClick('dq')}
         >
           Data Quality
         </button>
 
         <button
           type="button"
-          className={navItemClass(activeModule === 'vs')}
-          onClick={() => onModuleChange('vs')}
+          className={navItemClass(!isProfileRoute && activeModule === 'vs')}
+          onClick={() => handleModuleClick('vs')}
         >
           Visual Standardizer
         </button>
 
         <button
           type="button"
-          className={navItemClass(activeModule === 'li')}
-          onClick={() => onModuleChange('li')}
+          className={navItemClass(!isProfileRoute && activeModule === 'li')}
+          onClick={() => handleModuleClick('li')}
         >
           Leading Indicators
+        </button>
+
+        <button
+          type="button"
+          className={navItemClass(isProfileRoute)}
+          onClick={() => navigate('/profile')}
+        >
+          Profile
         </button>
       </nav>
 
