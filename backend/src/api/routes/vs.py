@@ -1,9 +1,14 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 import base64
 import os
 from pathlib import Path
+from sqlalchemy.orm import Session
 from backend.src.api.models.vs import GeneratePlotRequest, GeneratePlotResponse, StandardizeCodeRequest, StandardizeCodeResponse
+from backend.src.api.db import get_db
+from backend.src.api.db_models import User
+from backend.src.api.deps import get_current_user
+from backend.src.api.services.datasets import require_dataset_owner, require_dataset_owner_for_filename
 from backend.src.core.loader import DataLoader
 from backend.src.modules.vs.vs import PlotEngine
 from backend.src.modules.vs.visualizer import VisualStandardizer
@@ -17,7 +22,7 @@ class StylesResponse(BaseModel):
     styles: List[str]
 
 @router.get("/styles", response_model=StylesResponse)
-def get_styles():
+def get_styles(current_user: User = Depends(get_current_user)):
     from backend.src.modules.vs.style_manager import StyleManager
     manager = StyleManager()
     styles = []
@@ -28,7 +33,12 @@ def get_styles():
 
 
 @router.post("/generate", response_model=GeneratePlotResponse)
-def generate_plot(request: GeneratePlotRequest):
+def generate_plot(
+    request: GeneratePlotRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner(db, current_user.id, request.file_id)
     if request.is_cleaned:
         loader = DataLoader(data_folder_name="outputs")
         filename = f"{request.file_id}_cleaned.csv"
@@ -75,7 +85,12 @@ def generate_plot(request: GeneratePlotRequest):
     )
 
 @router.get("/plot/{filename}")
-def get_plot(filename: str):
+def get_plot(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner_for_filename(db, current_user.id, filename)
     backend_dir = Path(__file__).resolve().parents[3]
     plot_path = backend_dir / "outputs" / filename
     
@@ -85,7 +100,12 @@ def get_plot(filename: str):
     return FileResponse(plot_path)
 
 @router.get("/download/{filename}")
-def download_plot(filename: str):
+def download_plot(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner_for_filename(db, current_user.id, filename)
     backend_dir = Path(__file__).resolve().parents[3]
     plot_path = backend_dir / "outputs" / filename
     
@@ -99,7 +119,10 @@ def download_plot(filename: str):
     )
 
 @router.post("/standardize-code", response_model=StandardizeCodeResponse)
-def standardize_code(request: StandardizeCodeRequest):
+def standardize_code(
+    request: StandardizeCodeRequest,
+    current_user: User = Depends(get_current_user),
+):
     try:
         vs = VisualStandardizer()
         

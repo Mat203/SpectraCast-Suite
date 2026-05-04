@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { apiFetch, downloadFile } from '../lib/api';
 
 interface UploadResponse {
   status: string;
@@ -133,7 +134,7 @@ export const LeadingIndicatorsView: React.FC = () => {
       const formData = new FormData();
       formData.append('file', file);
 
-      const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload/', {
+      const uploadResponse = await apiFetch('/api/upload', {
         method: 'POST',
         body: formData,
       });
@@ -148,7 +149,7 @@ export const LeadingIndicatorsView: React.FC = () => {
         throw new Error('Upload succeeded but no file_id was returned by the server.');
       }
 
-      const runResponse = await fetch('http://127.0.0.1:8000/api/li/run', {
+      const runResponse = await apiFetch('/api/li/run', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -187,9 +188,15 @@ export const LeadingIndicatorsView: React.FC = () => {
     setError(null);
   };
 
-  const getDownloadUrl = (pathFromBackend: string) => {
-    const fileName = pathFromBackend.split('/').pop() || pathFromBackend;
-    return `http://127.0.0.1:8000/api/li/download/${encodeURIComponent(fileName)}`;
+  const handleDownload = async (pathFromBackend: string, fallbackName: string) => {
+    const fileName = pathFromBackend.split('/').pop() || fallbackName;
+    setError(null);
+
+    try {
+      await downloadFile(`/api/li/download/${encodeURIComponent(fileName)}`, fileName);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed.');
+    }
   };
 
   return (
@@ -399,18 +406,20 @@ export const LeadingIndicatorsView: React.FC = () => {
               )}
 
               <div className="mt-5 flex flex-wrap items-center gap-3">
-                <a
-                  href={getDownloadUrl(result.trends_file)}
+                <button
+                  type="button"
+                  onClick={() => handleDownload(result.trends_file, 'raw_trends.csv')}
                   className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700"
                 >
                   Download Raw Trends CSV
-                </a>
-                <a
-                  href={getDownloadUrl(result.correlations_file)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownload(result.correlations_file, 'correlations.csv')}
                   className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
                   Download Correlations CSV
-                </a>
+                </button>
               </div>
 
               {error && (

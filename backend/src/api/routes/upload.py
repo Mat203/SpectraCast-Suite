@@ -1,30 +1,34 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 import uuid
-import os
-import shutil
-from pathlib import Path
+from sqlalchemy.orm import Session
+
+from backend.src.api.db import get_db
+from backend.src.api.db_models import Dataset, User
+from backend.src.api.deps import get_current_user
+from backend.src.api.services.storage import StorageService
 
 router = APIRouter()
 
-BACKEND_DIR = Path(__file__).resolve().parents[3]
-UPLOADS_DIR = BACKEND_DIR / "uploads"
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+storage = StorageService()
 
 @router.post("")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
 
     file_id = str(uuid.uuid4())
-    safe_filename = f"{file_id}_raw.csv"
-    file_path = UPLOADS_DIR / safe_filename
-
+    safe_filename = storage.build_filename(file_id, suffix="raw", ext="csv")
     try:
-        with file_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        storage.save_upload(file, safe_filename)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not save file: {e}")
-    finally:
-        file.file.close()
+
+    dataset = Dataset(user_id=current_user.id, file_uuid=file_id)
+    db.add(dataset)
+    db.commit()
 
     return {"status": "success", "file_id": file_id}
