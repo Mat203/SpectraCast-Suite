@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { apiFetch } from '../lib/api';
+import { apiFetch, downloadFile } from '../lib/api';
 
 interface ProfileResponse {
   email: string;
@@ -10,6 +10,7 @@ export const Profile: React.FC = () => {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -52,6 +53,19 @@ export const Profile: React.FC = () => {
       isActive = false;
     };
   }, []);
+
+  const handleDownload = async (fileId: string) => {
+    setError(null);
+    setDownloadingId(fileId);
+
+    try {
+      await downloadFile(`/api/dq/download/${fileId}`, `dataset_${fileId}.csv`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   return (
     <div className="flex-1 h-full bg-slate-100 p-4 md:p-8 overflow-auto">
@@ -101,6 +115,14 @@ export const Profile: React.FC = () => {
                   className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
                 >
                   <span className="font-mono text-xs text-slate-600">{fileId}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(fileId)}
+                    disabled={downloadingId === fileId}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {downloadingId === fileId ? 'Downloading...' : 'Download'}
+                  </button>
                 </li>
               ))}
             </ul>

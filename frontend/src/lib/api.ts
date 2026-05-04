@@ -1,4 +1,4 @@
-import { getToken } from './auth';
+import { clearToken, getToken } from './auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
 
@@ -22,7 +22,15 @@ export const apiFetch = (path: string, options: ApiFetchOptions = {}) => {
     }
   }
 
-  return fetch(buildUrl(path), { ...rest, headers: nextHeaders });
+  return fetch(buildUrl(path), { ...rest, headers: nextHeaders }).then((response) => {
+    if (auth && response.status === 401) {
+      clearToken();
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login';
+      }
+    }
+    return response;
+  });
 };
 
 export const downloadFile = async (path: string, filename: string) => {
