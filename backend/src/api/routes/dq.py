@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 import numpy as np
 from scipy import stats
+import pandas as pd
 import os
 
 router = APIRouter()
@@ -157,7 +158,13 @@ def handle_outliers(
         raise HTTPException(status_code=400, detail="Invalid strategy")
 
     save_path = loader.data_dir / file_path
-    df.to_csv(save_path, index=False)
+    if isinstance(df.index, pd.DatetimeIndex):
+        df_to_save = df.copy()
+        if df_to_save.index.name is None:
+            df_to_save.index.name = "Date"
+        df_to_save.to_csv(save_path, index=True)
+    else:
+        df.to_csv(save_path, index=False)
 
     return {"status": "success", "message": f"Successfully applied {request.strategy} to {request.column}"}
 
@@ -183,7 +190,13 @@ def handle_missing(
 
     # Save logic
     save_path = loader.data_dir / file_path
-    cleaner.df.to_csv(save_path, index=False)
+    if isinstance(cleaner.df.index, pd.DatetimeIndex):
+        df_to_save = cleaner.df.copy()
+        if df_to_save.index.name is None:
+            df_to_save.index.name = "Date"
+        df_to_save.to_csv(save_path, index=True)
+    else:
+        cleaner.df.to_csv(save_path, index=False)
 
     return {"status": "success", "message": f"Successfully applied strategy {request.strategy} for missing values in {request.column}"}
 

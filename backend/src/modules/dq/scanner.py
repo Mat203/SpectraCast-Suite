@@ -8,21 +8,49 @@ class DataScanner:
     def __init__(self, df: pd.DataFrame):
         self.df = df
         self.logger = logging.getLogger(__name__)
-        datetime_column = self._get_datetime_column()
-        if not isinstance(self.df.index, pd.DatetimeIndex):
-            if datetime_column:
-                self.df = self.df.set_index(datetime_column, drop=False)
-            else:
-                self.logger.info("Datetime column not found. Time-based scanning will be skipped.")
+        if not self._has_datetime_axis():
+            self.logger.info("Datetime column not found. Time-based scanning will be skipped.")
 
     def _get_datetime_column(self) -> Optional[str]:
         for column in self.df.columns:
-            if pd.api.types.is_datetime64_any_dtype(self.df[column]):
+            series = self.df[column]
+            if pd.api.types.is_datetime64_any_dtype(series):
+                return column
+            if not (pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series)):
+                continue
+
+            sample = series.dropna().astype(str)
+            if sample.empty:
+                continue
+
+            if sample.str.fullmatch(r"\d+").all():
+                continue
+
+            name_hint = str(column).lower()
+            has_name_hint = any(token in name_hint for token in ("date", "time", "timestamp", "datetime"))
+            has_separator = sample.str.contains(r"[-/:T ]").any()
+            parsed = pd.to_datetime(sample, errors="coerce", infer_datetime_format=True)
+            if parsed.notna().mean() >= 0.8 and (has_name_hint or has_separator):
                 return column
         return None
 
     def _has_datetime_axis(self) -> bool:
         return isinstance(self.df.index, pd.DatetimeIndex) or self._get_datetime_column() is not None
+
+    def _resolve_datetime_index(self) -> Optional[pd.DatetimeIndex]:
+        if isinstance(self.df.index, pd.DatetimeIndex):
+            return self.df.index
+
+        datetime_column = self._get_datetime_column()
+        if not datetime_column:
+            return None
+
+        series = pd.to_datetime(self.df[datetime_column], errors="coerce", infer_datetime_format=True)
+        series = series.dropna()
+        if len(series) < 2:
+            return None
+
+        return pd.DatetimeIndex(series)
 
     def _detect_frequency_and_gaps(self) -> Dict[str, Any]:
         result = {
@@ -32,10 +60,11 @@ class DataScanner:
             "missing_dates": []
         }
 
-        if len(self.df) <= 1 or not isinstance(self.df.index, pd.DatetimeIndex):
+        datetime_index = self._resolve_datetime_index()
+        if len(self.df) <= 1 or datetime_index is None:
             return result
 
-        sorted_index = self.df.index.sort_values().drop_duplicates()
+        sorted_index = datetime_index.sort_values().drop_duplicates()
         if len(sorted_index) < 2:
             return result
 
@@ -87,7 +116,7 @@ class DataScanner:
         except Exception:
             return result
         
-        missing_dates = ideal_range.difference(self.df.index)
+        missing_dates = ideal_range.difference(sorted_index)
         
         result["missing_dates_count"] = len(missing_dates)
         if len(missing_dates) > 0:
