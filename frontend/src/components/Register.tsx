@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../lib/api';
 import { isAuthenticated, setToken } from '../lib/auth';
@@ -66,6 +67,50 @@ export const Register: React.FC = () => {
       navigate('/app', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
+    if (!credentialResponse.credential) {
+      setError('Google sign-in failed. Please try again.');
+      return;
+    }
+
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      const response = await apiFetch('/api/auth/google', {
+        method: 'POST',
+        auth: false,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token: credentialResponse.credential }),
+      });
+
+      if (!response.ok) {
+        let message = `Google login failed (HTTP ${response.status})`;
+        try {
+          const data = await response.json();
+          message = data?.detail || data?.message || message;
+        } catch {
+          message = `Google login failed (HTTP ${response.status})`;
+        }
+        throw new Error(message);
+      }
+
+      const data = (await response.json()) as TokenResponse;
+      if (!data.access_token) {
+        throw new Error('Google login succeeded but no token was returned.');
+      }
+
+      setToken(data.access_token);
+      navigate('/app', { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Google login failed. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -142,6 +187,25 @@ export const Register: React.FC = () => {
               {isSubmitting ? 'Creating account...' : 'Create account'}
             </button>
           </form>
+
+          <div className="my-6 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+            <span className="h-px flex-1 bg-slate-200" />
+            Or
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          <div className="flex justify-center">
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              onError={() => setError('Google sign-in failed. Please try again.')}
+              width="360"
+              theme="outline"
+              size="large"
+              shape="pill"
+              text="continue_with"
+              disabled={isSubmitting}
+            />
+          </div>
 
           <p className="mt-6 text-center text-sm text-slate-600">
             Already have an account?{' '}

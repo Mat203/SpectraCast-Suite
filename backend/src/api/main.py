@@ -9,7 +9,8 @@ from backend.src.api.routes import auth, dq, li, vs, upload
 from backend.src.api.db import engine
 from backend.src.api.db_models import Base
 import uvicorn
-
+from dotenv import load_dotenv
+load_dotenv()
 app = FastAPI(title="SpectraCast Suite API")
 
 app.add_middleware(
