@@ -109,6 +109,15 @@ export const LeadingIndicatorsView: React.FC = () => {
     }
   };
 
+  const getByokHeaders = () => {
+    const enabled = localStorage.getItem('user_llm_byok_enabled') === 'true';
+    const apiKey = localStorage.getItem('user_llm_api_key');
+    if (enabled && apiKey) {
+      return { 'x-llm-api-key': apiKey };
+    }
+    return {};
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -153,6 +162,7 @@ export const LeadingIndicatorsView: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...getByokHeaders(),
         },
         body: JSON.stringify({
           file_id: uploadData.file_id,
