@@ -19,3 +19,8 @@ class OutlierActionRequest(BaseModel):
     file_id: str
     column: str
     strategy: str
+
+class MissingValueActionRequest(BaseModel):
+    file_id: str
+    column: str
+    strategy: str
