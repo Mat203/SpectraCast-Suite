@@ -1,12 +1,13 @@
+import logging
 import pandas as pd
 import numpy as np
 from sklearn.impute import KNNImputer
 from statsmodels.tsa.holtwinters import SimpleExpSmoothing
-from scipy import stats
 
 class DataCleaner:
     def __init__(self, df: pd.DataFrame):
         self.df = df.copy()
+        self.logger = logging.getLogger(__name__)
 
     def align_datetime_index(self, frequency: str):
         if not isinstance(self.df.index, pd.DatetimeIndex) or "Unknown" in frequency:
@@ -50,7 +51,11 @@ class DataCleaner:
         if method == '3':
             return
 
-        print(f"[*] Handling outliers in '{column}' using method {method}...")
+        if not outlier_mask.any():
+            return
+
+        updated = int(outlier_mask.sum())
+        self.logger.info("Outliers detected in '%s': %s values.", column, updated)
 
         if pd.api.types.is_integer_dtype(self.df[column]):
             self.df[column] = self.df[column].astype(float)
@@ -58,17 +63,33 @@ class DataCleaner:
         if method == '1':
             model = SimpleExpSmoothing(self.df[column], initialization_method="estimated").fit()
             self.df.loc[outlier_mask, column] = model.fittedvalues[outlier_mask]
-
         elif method == '2':
             self.df.loc[outlier_mask, column] = np.nan
             self.df[column] = self.df[column].interpolate(method='linear')
             self.df[column] = self.df[column].ffill().bfill()
 
+        self.logger.info("Outlier handling updated %s values in '%s'.", updated, column)
+
     def detect_and_handle_outliers(self, column: str, method: str):
-        if not pd.api.types.is_numeric_dtype(self.df[column]):
+        series = self.df[column]
+        if not pd.api.types.is_numeric_dtype(series):
             return
 
-        z_scores = np.abs(stats.zscore(self.df[column], nan_policy='omit'))
-        outlier_mask = z_scores > 3
-        if outlier_mask.any():
-            self.handle_outliers(column, method, outlier_mask)
+        if pd.api.types.is_datetime64_any_dtype(series) or pd.api.types.is_timedelta64_dtype(series):
+            return
+
+        q1 = series.quantile(0.25)
+        q3 = series.quantile(0.75)
+        iqr = q3 - q1
+        if pd.isna(iqr) or iqr == 0:
+            return
+
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+        outlier_mask = (series < lower_bound) | (series > upper_bound)
+
+        if not outlier_mask.any():
+            return
+
+        self.logger.info("IQR detected %s outliers in '%s'.", int(outlier_mask.sum()), column)
+        self.handle_outliers(column, method, outlier_mask)
