@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { apiFetch, downloadFile } from '../lib/api';
 
 interface UploadResponse {
   status: string;
@@ -117,7 +118,7 @@ export const DataQualityView: React.FC = () => {
         const formData = new FormData();
         formData.append('file', file);
 
-        const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
+        const uploadResponse = await apiFetch('/api/upload', {
           method: 'POST',
           body: formData,
         });
@@ -136,7 +137,7 @@ export const DataQualityView: React.FC = () => {
         setFileId(currentFileId);
       }
 
-      const scanResponse = await fetch('http://127.0.0.1:8000/api/dq/scan', {
+      const scanResponse = await apiFetch('/api/dq/scan', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -187,7 +188,7 @@ export const DataQualityView: React.FC = () => {
       let currentFileId = fileId;
       
       if (!currentFileId && file) {
-        const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
+        const uploadResponse = await apiFetch('/api/upload', {
           method: 'POST',
           body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })(),
         });
@@ -200,7 +201,7 @@ export const DataQualityView: React.FC = () => {
       
       if (!currentFileId) throw new Error('No file available for processing');
 
-      const actionRes = await fetch('http://127.0.0.1:8000/api/dq/handle-outliers', {
+      const actionRes = await apiFetch('/api/dq/handle-outliers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -241,7 +242,7 @@ export const DataQualityView: React.FC = () => {
       let currentFileId = fileId;
       
       if (!currentFileId && file) {
-        const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
+        const uploadResponse = await apiFetch('/api/upload', {
           method: 'POST',
           body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })(),
         });
@@ -254,7 +255,7 @@ export const DataQualityView: React.FC = () => {
       
       if (!currentFileId) throw new Error('No file available for processing');
 
-      const actionRes = await fetch('http://127.0.0.1:8000/api/dq/handle-missing', {
+      const actionRes = await apiFetch('/api/dq/handle-missing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -276,6 +277,20 @@ export const DataQualityView: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setIsProcessingAction(false);
+    }
+  };
+
+  const handleDownloadDataset = async () => {
+    if (!fileId) {
+      return;
+    }
+
+    setError(null);
+
+    try {
+      await downloadFile(`/api/dq/download/${fileId}`, `dataset_${fileId}.csv`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed.');
     }
   };
 
@@ -346,9 +361,9 @@ export const DataQualityView: React.FC = () => {
             </button>
 
             {fileId && report && (
-              <a
-                href={`http://127.0.0.1:8000/api/dq/download/${fileId}`}
-                download={`dataset_${fileId}.csv`}
+              <button
+                type="button"
+                onClick={handleDownloadDataset}
                 className="inline-flex items-center rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors"
                 title="Download the updated dataset"
               >
@@ -356,7 +371,7 @@ export const DataQualityView: React.FC = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                 </svg>
                 Download Updated Dataset
-              </a>
+              </button>
             )}
 
             {file && (

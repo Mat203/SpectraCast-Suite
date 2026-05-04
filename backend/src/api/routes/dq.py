@@ -1,6 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
+from sqlalchemy.orm import Session
 from backend.src.api.models.dq import ScanRequest, CleanRequest, CleanResponse, OutlierActionRequest, MissingValueActionRequest
+from backend.src.api.db import get_db
+from backend.src.api.db_models import User
+from backend.src.api.deps import get_current_user
+from backend.src.api.services.datasets import require_dataset_owner
 from backend.src.core.loader import DataLoader
 from backend.src.modules.dq.scanner import DataScanner
 from backend.src.modules.dq.cleaner import DataCleaner
@@ -26,8 +31,13 @@ def convert_numpy_types(obj: Any) -> Any:
     return obj
 
 @router.post("/scan", response_model=Dict[str, Any])
-def scan_data(request: ScanRequest):
+def scan_data(
+    request: ScanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     try:
+        require_dataset_owner(db, current_user.id, request.file_id)
         print(f"[SCAN] Starting scan for file_id: {request.file_id}")
         loader = DataLoader(data_folder_name="uploads")
         
@@ -56,7 +66,12 @@ def scan_data(request: ScanRequest):
         raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
 
 @router.post("/clean", response_model=CleanResponse)
-def clean_data(request: CleanRequest):
+def clean_data(
+    request: CleanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner(db, current_user.id, request.file_id)
     loader = DataLoader(data_folder_name="uploads")
     df = loader.load_csv(f"{request.file_id}_raw.csv")
 
@@ -96,7 +111,12 @@ def clean_data(request: CleanRequest):
     )
 
 @router.post("/handle-outliers")
-def handle_outliers(request: OutlierActionRequest):
+def handle_outliers(
+    request: OutlierActionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner(db, current_user.id, request.file_id)
     loader = DataLoader(data_folder_name="uploads")
     file_path = f"{request.file_id}_raw.csv"
     df = loader.load_csv(file_path)
@@ -142,7 +162,12 @@ def handle_outliers(request: OutlierActionRequest):
     return {"status": "success", "message": f"Successfully applied {request.strategy} to {request.column}"}
 
 @router.post("/handle-missing")
-def handle_missing(request: MissingValueActionRequest):
+def handle_missing(
+    request: MissingValueActionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner(db, current_user.id, request.file_id)
     loader = DataLoader(data_folder_name="uploads")
     file_path = f"{request.file_id}_raw.csv"
     df = loader.load_csv(file_path)
@@ -163,7 +188,12 @@ def handle_missing(request: MissingValueActionRequest):
     return {"status": "success", "message": f"Successfully applied strategy {request.strategy} for missing values in {request.column}"}
 
 @router.get("/download/{file_id}")
-def download_dataset(file_id: str):
+def download_dataset(
+    file_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner(db, current_user.id, file_id)
     loader = DataLoader(data_folder_name="uploads")
     
     file_path = loader.data_dir / f"{file_id}_raw.csv"

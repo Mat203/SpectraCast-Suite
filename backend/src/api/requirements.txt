@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 pydantic
+sqlalchemy
 pandas
 numpy
 scipy
@@ -8,4 +9,8 @@ scikit-learn
 matplotlib
 statsmodels
 python-multipart
+bcrypt
+PyJWT
+google-auth
+requests
 serpapi

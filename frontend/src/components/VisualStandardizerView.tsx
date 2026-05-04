@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { apiFetch, downloadFile, fetchBlobUrl } from '../lib/api';
 
 type Tab = 'plot_generator' | 'code_standardizer' | 'style_creator';
 
@@ -22,6 +23,7 @@ export const VisualStandardizerView: React.FC = () => {
   const [selectedStyle, setSelectedStyle] = useState<string>('');
   const [outputFilename, setOutputFilename] = useState<string>('plot.png');
   const [plotResult, setPlotResult] = useState<GeneratePlotResponse | null>(null);
+  const [plotPreviewUrl, setPlotPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [rawCode, setRawCode] = useState<string>('');
@@ -33,7 +35,7 @@ export const VisualStandardizerView: React.FC = () => {
       try {
         setIsLoading(true);
         setError(null);
-        const res = await fetch('http://127.0.0.1:8000/api/vs/styles');
+        const res = await apiFetch('/api/vs/styles');
         if (!res.ok) {
           throw new Error('Failed to fetch styles');
         }
@@ -55,6 +57,42 @@ export const VisualStandardizerView: React.FC = () => {
     };
     fetchStyles();
   }, []);
+
+  useEffect(() => {
+    if (!plotResult?.plot_filename) {
+      setPlotPreviewUrl(null);
+      return;
+    }
+
+    let isActive = true;
+
+    const loadPreview = async () => {
+      try {
+        const blobUrl = await fetchBlobUrl(`/api/vs/plot/${plotResult.plot_filename}`);
+        if (!isActive) {
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+        setPlotPreviewUrl(blobUrl);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not load plot preview');
+      }
+    };
+
+    loadPreview();
+
+    return () => {
+      isActive = false;
+    };
+  }, [plotResult]);
+
+  useEffect(() => {
+    return () => {
+      if (plotPreviewUrl) {
+        URL.revokeObjectURL(plotPreviewUrl);
+      }
+    };
+  }, [plotPreviewUrl]);
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -142,7 +180,7 @@ export const VisualStandardizerView: React.FC = () => {
       const formData = new FormData();
       formData.append('file', file);
 
-      const uploadRes = await fetch('http://127.0.0.1:8000/api/upload/', {
+      const uploadRes = await apiFetch('/api/upload', {
         method: 'POST',
         body: formData,
       });
@@ -151,7 +189,7 @@ export const VisualStandardizerView: React.FC = () => {
       const uploadData = await uploadRes.json();
       const fileId = uploadData.file_id;
 
-      const generateRes = await fetch('http://127.0.0.1:8000/api/vs/generate', {
+      const generateRes = await apiFetch('/api/vs/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -168,6 +206,7 @@ export const VisualStandardizerView: React.FC = () => {
 
       if (!generateRes.ok) throw new Error('Plot generation failed');
       const generateData = await generateRes.json();
+      setPlotPreviewUrl(null);
       setPlotResult(generateData);
 
     } catch (err) {
@@ -192,7 +231,7 @@ export const VisualStandardizerView: React.FC = () => {
     setCleanedCode('');
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/vs/standardize-code', {
+      const res = await apiFetch('/api/vs/standardize-code', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -223,6 +262,20 @@ export const VisualStandardizerView: React.FC = () => {
     }).catch(err => {
       console.error("Could not copy text: ", err);
     });
+  };
+
+  const handleDownloadPlot = async () => {
+    if (!plotResult?.plot_filename) {
+      return;
+    }
+
+    setError(null);
+
+    try {
+      await downloadFile(`/api/vs/download/${plotResult.plot_filename}`, plotResult.plot_filename);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed.');
+    }
   };
 
   return (
@@ -383,24 +436,30 @@ export const VisualStandardizerView: React.FC = () => {
                  <div className="mt-6 bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
                     <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center">
                       <h4 className="text-slate-800 font-medium">Generated Plot Preview</h4>
-                      <a 
-                        href={`http://127.0.0.1:8000/api/vs/download/${plotResult.plot_filename}`}
-                        download={plotResult.plot_filename}
+                      <button
+                        type="button"
+                        onClick={handleDownloadPlot}
                         className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center gap-1"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                         </svg>
                         Download Image
-                      </a>
+                      </button>
                     </div>
                     <div className="p-4 bg-slate-50 flex justify-center custom-plot-preview">
-                      <img 
-                        src={`http://127.0.0.1:8000/api/vs/plot/${plotResult.plot_filename}`} 
-                        alt="Generated Plot" 
-                        className="max-w-full h-auto rounded shadow-sm border border-slate-200"
-                        style={{ maxHeight: '500px' }}
-                      />
+                      {plotPreviewUrl ? (
+                        <img
+                          src={plotPreviewUrl}
+                          alt="Generated Plot"
+                          className="max-w-full h-auto rounded shadow-sm border border-slate-200"
+                          style={{ maxHeight: '500px' }}
+                        />
+                      ) : (
+                        <div className="flex h-64 w-full items-center justify-center rounded-lg border border-dashed border-slate-300 text-sm text-slate-500">
+                          Plot preview will appear here after generation.
+                        </div>
+                      )}
                     </div>
                  </div>
               )}
