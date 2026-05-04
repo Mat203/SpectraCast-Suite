@@ -1,16 +1,28 @@
+import logging
 import pandas as pd
 import numpy as np
 from scipy import stats
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 class DataScanner:
     def __init__(self, df: pd.DataFrame):
         self.df = df
+        self.logger = logging.getLogger(__name__)
+        datetime_column = self._get_datetime_column()
         if not isinstance(self.df.index, pd.DatetimeIndex):
-            try:
-                self.df.index = pd.to_datetime(self.df.index)
-            except Exception:
-                print("Warning: Index is not a date. Time-based scanning may be limited.")
+            if datetime_column:
+                self.df = self.df.set_index(datetime_column, drop=False)
+            else:
+                self.logger.info("Datetime column not found. Time-based scanning will be skipped.")
+
+    def _get_datetime_column(self) -> Optional[str]:
+        for column in self.df.columns:
+            if pd.api.types.is_datetime64_any_dtype(self.df[column]):
+                return column
+        return None
+
+    def _has_datetime_axis(self) -> bool:
+        return isinstance(self.df.index, pd.DatetimeIndex) or self._get_datetime_column() is not None
 
     def _detect_frequency_and_gaps(self) -> Dict[str, Any]:
         result = {
@@ -24,12 +36,22 @@ class DataScanner:
             return result
 
         sorted_index = self.df.index.sort_values().drop_duplicates()
+        if len(sorted_index) < 2:
+            return result
+
         deltas = sorted_index.to_series().diff().dropna()
         
         if deltas.empty:
             return result
 
-        dominant_delta_days = deltas.mode()[0].days
+        try:
+            dominant_delta = deltas.mode().iloc[0]
+        except (IndexError, ValueError):
+            return result
+
+        dominant_delta_days = dominant_delta.days
+        if dominant_delta_days <= 0:
+            return result
         
         if 28 <= dominant_delta_days <= 31:
             most_frequent_day = pd.Series(sorted_index.day).mode()[0]
@@ -56,11 +78,14 @@ class DataScanner:
         result["frequency"] = freq_str
         result["display_frequency"] = display_freq
         
-        ideal_range = pd.date_range(
-            start=sorted_index.min(), 
-            end=sorted_index.max(), 
-            freq=freq_str
-        )
+        try:
+            ideal_range = pd.date_range(
+                start=sorted_index.min(),
+                end=sorted_index.max(),
+                freq=freq_str
+            )
+        except Exception:
+            return result
         
         missing_dates = ideal_range.difference(self.df.index)
         
@@ -78,8 +103,17 @@ class DataScanner:
             "missing_values": self.df.isna().sum().to_dict()
         }
 
-        time_check_results = self._detect_frequency_and_gaps()
-        report.update(time_check_results)
+        if self._has_datetime_axis():
+            time_check_results = self._detect_frequency_and_gaps()
+            report.update(time_check_results)
+        else:
+            report.update({
+                "frequency": "Unknown",
+                "display_frequency": "Unknown (Irregular)",
+                "missing_dates_count": 0,
+                "missing_dates": [],
+                "time_series_message": "Часова колонка не знайдена. Аналіз часових рядів пропущено",
+            })
 
         numeric_cols = self.df.select_dtypes(include=[np.number]).columns
         
