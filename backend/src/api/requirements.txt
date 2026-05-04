@@ -8,3 +8,4 @@ scikit-learn
 matplotlib
 statsmodels
 python-multipart
+serpapi

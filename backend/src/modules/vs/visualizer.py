@@ -45,6 +45,7 @@ class VisualStandardizer:
             tree = ast.parse(raw_code)
             cleaned_code = ast.unparse(StyleRemover().visit(tree))
             style_str = json.dumps(self.engine.style_dict, indent=4)
+            style_str = style_str.replace("true", "True").replace("false", "False").replace("null", "None")
             return f"import matplotlib.pyplot as plt\n\nplt.rcParams.update({style_str})\n\n{cleaned_code}"
         except Exception as e:
             print(f"Error standardizing code: {e}")

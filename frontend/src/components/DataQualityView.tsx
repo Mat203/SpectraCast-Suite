@@ -24,6 +24,17 @@ export const DataQualityView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ScanReport | null>(null);
 
+  const [selectedOutlierCol, setSelectedOutlierCol] = useState<string | null>(null);
+  const [isOutlierModalOpen, setIsOutlierModalOpen] = useState(false);
+  const [outlierStrategy, setOutlierStrategy] = useState('clip_iqr');
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
+
+  const [selectedMissingCol, setSelectedMissingCol] = useState<string | null>(null);
+  const [isMissingModalOpen, setIsMissingModalOpen] = useState(false);
+  const [missingStrategy, setMissingStrategy] = useState('3'); // Default: Forward Fill
+
+  const [fileId, setFileId] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const previewColumns = useMemo(() => {
@@ -63,6 +74,7 @@ export const DataQualityView: React.FC = () => {
 
     setError(null);
     setReport(null);
+    setFileId(null);
     setFile(nextFile);
   };
 
@@ -88,8 +100,8 @@ export const DataQualityView: React.FC = () => {
     fileInputRef.current?.click();
   };
 
-  const handleScan = async () => {
-    if (!file) {
+  const handleScan = async (useExistingFile: boolean = false) => {
+    if (!file && !useExistingFile) {
       setError('Select a .csv file before scanning.');
       return;
     }
@@ -98,22 +110,30 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      let currentFileId = fileId;
 
-      const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      if (!useExistingFile || !currentFileId) {
+        if (!file) throw new Error('No file selected.');
+        const formData = new FormData();
+        formData.append('file', file);
 
-      if (!uploadResponse.ok) {
-        throw new Error(`Upload failed (${uploadResponse.status})`);
-      }
+        const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
 
-      const uploadResult = (await uploadResponse.json()) as UploadResponse;
+        if (!uploadResponse.ok) {
+          throw new Error(`Upload failed (${uploadResponse.status})`);
+        }
 
-      if (!uploadResult.file_id) {
-        throw new Error('Upload succeeded but file_id was missing.');
+        const uploadResult = (await uploadResponse.json()) as UploadResponse;
+
+        if (!uploadResult.file_id) {
+          throw new Error('Upload succeeded but file_id was missing.');
+        }
+
+        currentFileId = uploadResult.file_id;
+        setFileId(currentFileId);
       }
 
       const scanResponse = await fetch('http://127.0.0.1:8000/api/dq/scan', {
@@ -121,7 +141,7 @@ export const DataQualityView: React.FC = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ file_id: uploadResult.file_id }),
+        body: JSON.stringify({ file_id: currentFileId }),
       });
 
       if (!scanResponse.ok) {
@@ -148,6 +168,114 @@ export const DataQualityView: React.FC = () => {
       setError(message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleOutlierClick = (column: string) => {
+    setSelectedOutlierCol(column);
+    setOutlierStrategy('clip_iqr');
+    setIsOutlierModalOpen(true);
+  };
+
+  const handleApplyOutlierStrategy = async () => {
+    if (!selectedOutlierCol) return;
+
+    setIsProcessingAction(true);
+    setError(null);
+
+    try {
+      let currentFileId = fileId;
+      
+      if (!currentFileId && file) {
+        const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
+          method: 'POST',
+          body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })(),
+        });
+
+        if (!uploadResponse.ok) throw new Error('Upload failed');
+        const uploadResult = await uploadResponse.json() as UploadResponse;
+        currentFileId = uploadResult.file_id;
+        setFileId(currentFileId);
+      }
+      
+      if (!currentFileId) throw new Error('No file available for processing');
+
+      const actionRes = await fetch('http://127.0.0.1:8000/api/dq/handle-outliers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_id: currentFileId,
+          column: selectedOutlierCol,
+          strategy: outlierStrategy
+        })
+      });
+
+      if (!actionRes.ok) {
+        const errorData = await actionRes.json() as { detail?: string };
+        throw new Error(errorData.detail || 'Failed to handle outliers');
+      }
+
+      setIsOutlierModalOpen(false);
+      await handleScan(true); // Rescan existing file_id, don't re-upload local file
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleMissingClick = (column: string) => {
+    setSelectedMissingCol(column);
+    setMissingStrategy('3');
+    setIsMissingModalOpen(true);
+  };
+
+  const handleApplyMissingStrategy = async () => {
+    if (!selectedMissingCol) return;
+
+    setIsProcessingAction(true);
+    setError(null);
+
+    try {
+      let currentFileId = fileId;
+      
+      if (!currentFileId && file) {
+        const uploadResponse = await fetch('http://127.0.0.1:8000/api/upload', {
+          method: 'POST',
+          body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })(),
+        });
+
+        if (!uploadResponse.ok) throw new Error('Upload failed');
+        const uploadResult = await uploadResponse.json() as UploadResponse;
+        currentFileId = uploadResult.file_id;
+        setFileId(currentFileId);
+      }
+      
+      if (!currentFileId) throw new Error('No file available for processing');
+
+      const actionRes = await fetch('http://127.0.0.1:8000/api/dq/handle-missing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_id: currentFileId,
+          column: selectedMissingCol,
+          strategy: missingStrategy
+        })
+      });
+
+      if (!actionRes.ok) {
+        const errorData = await actionRes.json() as { detail?: string };
+        throw new Error(errorData.detail || 'Failed to handle missing values');
+      }
+
+      setIsMissingModalOpen(false);
+      await handleScan(true);
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setIsProcessingAction(false);
     }
   };
 
@@ -200,7 +328,7 @@ export const DataQualityView: React.FC = () => {
           <div className="mt-5 flex flex-wrap items-center gap-4">
             <button
               type="button"
-              onClick={handleScan}
+              onClick={() => handleScan(false)}
               disabled={!file || isLoading}
               className={`inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors ${!file || isLoading ? 'bg-slate-300 text-slate-600 cursor-not-allowed' : 'bg-sky-600 text-white hover:bg-sky-700'}`}
             >
@@ -216,6 +344,20 @@ export const DataQualityView: React.FC = () => {
                 'Upload & Scan'
               )}
             </button>
+
+            {fileId && report && (
+              <a
+                href={`http://127.0.0.1:8000/api/dq/download/${fileId}`}
+                download={`dataset_${fileId}.csv`}
+                className="inline-flex items-center rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors"
+                title="Download the updated dataset"
+              >
+                <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+                Download Updated Dataset
+              </a>
+            )}
 
             {file && (
               <span className="text-sm text-slate-500">
@@ -259,16 +401,38 @@ export const DataQualityView: React.FC = () => {
               <div className="mt-6 space-y-4">
                 <div>
                   <h4 className="text-sm font-semibold text-slate-700">Missing Values</h4>
-                  <ul className="mt-2 space-y-2">
-                    {Object.entries(report.missing_values ?? {}).map(([column, count]) => (
-                      <li key={column} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                        <span className="font-medium text-slate-700">{column}</span>
-                        <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${count > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                          {count}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  {Object.keys(report.missing_values ?? {}).length > 0 ? (
+                    <ul className="mt-2 space-y-2">
+                      {Object.entries(report.missing_values).map(([column, count]) => (
+                        <li 
+                          key={column} 
+                          onClick={() => count > 0 && handleMissingClick(column)}
+                          className={`group flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm ${count > 0 ? 'cursor-pointer hover:bg-slate-50 hover:border-amber-200 transition-all' : ''}`}
+                          title={count > 0 ? "Click to handle missing values" : "No missing values"}
+                        >
+                          <span className="font-medium text-slate-700">{column}</span>
+                          {count > 0 ? (
+                            <div className="flex items-center gap-2">
+                              <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                                {count}
+                              </span>
+                              <svg className="h-4 w-4 text-slate-400 group-hover:text-amber-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                              </svg>
+                            </div>
+                          ) : (
+                            <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                              0
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                      No missing values detected.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -276,9 +440,19 @@ export const DataQualityView: React.FC = () => {
                   {Object.keys(report.outliers ?? {}).length > 0 ? (
                     <ul className="mt-2 space-y-2">
                       {Object.entries(report.outliers).map(([column, count]) => (
-                        <li key={column} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                        <li 
+                          key={column} 
+                          onClick={() => handleOutlierClick(column)}
+                          className="group flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 hover:border-sky-200 transition-all"
+                          title="Click to handle outliers"
+                        >
                           <span className="font-medium text-slate-700">{column}</span>
-                          <span className="rounded-md bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">{count}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-md bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">{count}</span>
+                            <svg className="h-4 w-4 text-slate-400 group-hover:text-sky-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -299,9 +473,9 @@ export const DataQualityView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <div className="w-full overflow-x-auto overflow-y-auto max-h-[60vh] rounded-xl border border-slate-200">
                 <table className="min-w-full border-collapse text-sm">
-                  <thead className="sticky top-0 bg-slate-100 text-slate-700">
+                  <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm text-slate-700">
                     <tr>
                       {previewColumns.map((column) => (
                         <th key={column} className="whitespace-nowrap border-b border-slate-200 px-4 py-3 text-left font-semibold">
@@ -314,7 +488,7 @@ export const DataQualityView: React.FC = () => {
                     {report.dataset_preview?.map((row, rowIndex) => (
                       <tr key={`row-${rowIndex}`} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                         {previewColumns.map((column) => (
-                          <td key={`${rowIndex}-${column}`} className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-slate-700">
+                          <td key={`${rowIndex}-${column}`} className="whitespace-nowrap font-mono text-sm border-b border-slate-100 px-4 py-3 text-slate-700">
                             {formatCellValue(row[column])}
                           </td>
                         ))}
@@ -325,6 +499,123 @@ export const DataQualityView: React.FC = () => {
               </div>
             </article>
           </section>
+        )}
+
+        {isOutlierModalOpen && selectedOutlierCol && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+              <h2 className="text-xl font-bold text-slate-800">Handle Outliers</h2>
+              <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
+                Column: <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{selectedOutlierCol}</span>
+              </p>
+
+              <div className="mt-5">
+                <label htmlFor="outlier-strategy" className="mb-2 block text-sm font-medium text-slate-700">
+                  Select Strategy
+                </label>
+                <select
+                  id="outlier-strategy"
+                  value={outlierStrategy}
+                  onChange={(e) => setOutlierStrategy(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                >
+                  <option value="clip_iqr">Clip to IQR Bounds</option>
+                  <option value="mean">Replace with Mean</option>
+                  <option value="median">Replace with Median</option>
+                  <option value="drop">Drop Rows</option>
+                </select>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsOutlierModalOpen(false)}
+                  disabled={isProcessingAction}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyOutlierStrategy}
+                  disabled={isProcessingAction}
+                  className="inline-flex items-center rounded-lg bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:bg-sky-400"
+                >
+                  {isProcessingAction ? (
+                    <>
+                      <svg className="mr-2 h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Applying...
+                    </>
+                  ) : (
+                    'Apply & Rescan'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isMissingModalOpen && selectedMissingCol && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+              <h2 className="text-xl font-bold text-slate-800">Handle Missing Values</h2>
+              <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
+                Column: <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{selectedMissingCol}</span>
+              </p>
+
+              <div className="mt-5">
+                <label htmlFor="missing-strategy" className="mb-2 block text-sm font-medium text-slate-700">
+                  Select Strategy
+                </label>
+                <select
+                  id="missing-strategy"
+                  value={missingStrategy}
+                  onChange={(e) => setMissingStrategy(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="1">Linear Interpolation</option>
+                  <option value="2">Spline Interpolation</option>
+                  <option value="3">Forward Fill</option>
+                  <option value="4">Backward Fill</option>
+                  <option value="5">Seasonal Mean Fill</option>
+                  <option value="6">KNN Imputer (Auto)</option>
+                  <option value="7">Do Nothing</option>
+                </select>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsMissingModalOpen(false)}
+                  disabled={isProcessingAction}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyMissingStrategy}
+                  disabled={isProcessingAction}
+                  className="inline-flex items-center rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:bg-amber-400"
+                >
+                  {isProcessingAction ? (
+                    <>
+                      <svg className="mr-2 h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Applying...
+                    </>
+                  ) : (
+                    'Apply & Rescan'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
