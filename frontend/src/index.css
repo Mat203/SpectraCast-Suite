@@ -17,3 +17,28 @@ body {
   min-width: 320px;
   min-height: 100vh;
 }
+
+.scs-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.scs-scrollbar::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.scs-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scs-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.scs-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}

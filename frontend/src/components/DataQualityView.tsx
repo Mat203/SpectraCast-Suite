@@ -551,8 +551,8 @@ export const DataQualityView: React.FC = () => {
         </section>
 
         {report && (
-          <section className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_1.6fr]">
-            <article className="rounded-2xl border border-slate-200 bg-white p-5 md:p-6 shadow-sm">
+          <section className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(340px,1.05fr)_minmax(0,1.95fr)]">
+            <article className="min-w-[340px] rounded-2xl border border-slate-200 bg-white p-5 md:p-6 shadow-sm">
               <h3 className="text-xl font-bold text-slate-900">Data Quality Report</h3>
               <p className="mt-1 text-sm text-slate-500">Core metrics extracted from your latest scan.</p>
 
@@ -649,7 +649,7 @@ export const DataQualityView: React.FC = () => {
               </div>
             </article>
 
-            <article className="rounded-2xl border border-slate-200 bg-white p-5 md:p-6 shadow-sm">
+            <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 md:p-6 shadow-sm">
               <div className="mb-4 flex items-end justify-between gap-4">
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Dataset Preview</h3>
@@ -657,8 +657,8 @@ export const DataQualityView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="w-full overflow-x-auto overflow-y-auto max-h-[60vh] rounded-xl border border-slate-200">
-                <table className="min-w-full border-collapse text-sm">
+              <div className="w-full max-w-full overflow-x-auto overflow-y-auto max-h-[60vh] rounded-xl border border-slate-200 scs-scrollbar">
+                <table className="min-w-max border-collapse text-sm">
                   <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm text-slate-700">
                     <tr>
                       {previewColumns.map((column) => (
