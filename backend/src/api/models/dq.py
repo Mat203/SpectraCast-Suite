@@ -20,7 +20,39 @@ class OutlierActionRequest(BaseModel):
     column: str
     strategy: str
 
+class OutlierPreviewRequest(BaseModel):
+    file_id: str
+    column: str
+    strategy: str
+
+class OutlierPreviewResponse(BaseModel):
+    column: str
+    strategy: str
+    x: List[str]
+    before: List[Optional[float]]
+    after: List[Optional[float]]
+
 class MissingValueActionRequest(BaseModel):
     file_id: str
     column: str
     strategy: str
+
+class MissingPreviewRequest(BaseModel):
+    file_id: str
+    column: str
+    strategy: str
+
+class MissingPreviewResponse(BaseModel):
+    column: str
+    strategy: str
+    x: List[str]
+    before: List[Optional[float]]
+    after: List[Optional[float]]
+
+class FixTimestampsRequest(BaseModel):
+    file_id: str
+
+class FixTimestampsResponse(BaseModel):
+    status: str
+    inserted_rows: int
+    dataset_preview: List[Dict[str, Any]]

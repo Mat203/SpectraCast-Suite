@@ -30,18 +30,6 @@ class DataLoader:
             for i, col in enumerate(df.columns, 1):
                 print(f"    {i}. {col}")
 
-            for col in df.columns:
-                try:
-                    converted = pd.to_datetime(df[col], format='mixed', errors='coerce')
-                    
-                    if converted.notna().any():
-                        df.index = converted
-                        df.drop(columns=[col], inplace=True)
-                        df.sort_index(inplace=True)
-                        break
-                except Exception:
-                    continue
-                
             print(f"Success: Завантажено '{filename}'. Розмір: {df.shape}")
             return df
             

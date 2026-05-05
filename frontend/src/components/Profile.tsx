@@ -3,9 +3,14 @@ import { apiFetch, downloadFile } from '../lib/api';
 import { LLM_MODELS, LLM_PROVIDERS } from '../lib/llmModels';
 import type { LlmProvider } from '../lib/llmModels';
 
+interface DatasetInfo {
+  file_id: string;
+  original_filename?: string | null;
+}
+
 interface ProfileResponse {
   email: string;
-  datasets: string[];
+  datasets: DatasetInfo[];
 }
 
 export const Profile: React.FC = () => {
@@ -13,6 +18,7 @@ export const Profile: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isLlmEnabled, setIsLlmEnabled] = useState(false);
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('openai');
   const [llmModel, setLlmModel] = useState<string>(LLM_MODELS.openai[0]);
@@ -132,6 +138,35 @@ export const Profile: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Download failed.');
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const handleDelete = async (fileId: string) => {
+    if (!window.confirm('Delete this dataset? This action cannot be undone.')) {
+      return;
+    }
+
+    setError(null);
+    setDeletingId(fileId);
+
+    try {
+      const response = await apiFetch(`/api/upload/${fileId}`, { method: 'DELETE' });
+      if (!response.ok) {
+        throw new Error(await extractApiError(response, 'Delete failed'));
+      }
+
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              datasets: prev.datasets.filter((dataset) => dataset.file_id !== fileId),
+            }
+          : prev,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -334,20 +369,38 @@ export const Profile: React.FC = () => {
 
           {!isLoading && !error && profile && profile.datasets.length > 0 && (
             <ul className="mt-4 space-y-2">
-              {profile.datasets.map((fileId) => (
+              {profile.datasets.map((dataset) => (
                 <li
-                  key={fileId}
+                  key={dataset.file_id}
                   className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
                 >
-                  <span className="font-mono text-xs text-slate-600">{fileId}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleDownload(fileId)}
-                    disabled={downloadingId === fileId}
-                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {downloadingId === fileId ? 'Downloading...' : 'Download'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 4h10l6 6v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 4v6h6" />
+                    </svg>
+                    <span className="text-sm font-semibold text-slate-800">
+                      {dataset.original_filename || dataset.file_id}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(dataset.file_id)}
+                      disabled={downloadingId === dataset.file_id || deletingId === dataset.file_id}
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {downloadingId === dataset.file_id ? 'Downloading...' : 'Download'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(dataset.file_id)}
+                      disabled={deletingId === dataset.file_id || downloadingId === dataset.file_id}
+                      className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {deletingId === dataset.file_id ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
