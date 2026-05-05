@@ -29,7 +29,7 @@ class DataScanner:
             name_hint = str(column).lower()
             has_name_hint = any(token in name_hint for token in ("date", "time", "timestamp", "datetime"))
             has_separator = sample.str.contains(r"[-/:T ]").any()
-            parsed = pd.to_datetime(sample, errors="coerce", infer_datetime_format=True)
+            parsed = pd.to_datetime(sample, errors="coerce")
             if parsed.notna().mean() >= 0.8 and (has_name_hint or has_separator):
                 return column
         return None
@@ -45,7 +45,7 @@ class DataScanner:
         if not datetime_column:
             return None
 
-        series = pd.to_datetime(self.df[datetime_column], errors="coerce", infer_datetime_format=True)
+        series = pd.to_datetime(self.df[datetime_column], errors="coerce")
         series = series.dropna()
         if len(series) < 2:
             return None
@@ -250,6 +250,7 @@ class DataScanner:
         }
 
     def run_health_check(self) -> Dict[str, Any]:
+        has_datetime_axis = self._has_datetime_axis()
         report = {
             "rows": len(self.df),
             "columns": list(self.df.columns),
@@ -257,9 +258,10 @@ class DataScanner:
             "outlier_strategy_recommendations": {},
             "missing_values": self.df.isna().sum().to_dict(),
             "missing_value_strategy_recommendations": {},
+            "has_datetime_axis": has_datetime_axis,
         }
 
-        if self._has_datetime_axis():
+        if has_datetime_axis:
             time_check_results = self._detect_frequency_and_gaps()
             report.update(time_check_results)
         else:

@@ -8,6 +8,7 @@ import type { MissingStrategyKey } from '../lib/missingValueStrategies';
 interface UploadResponse {
   status: string;
   file_id: string;
+  original_filename?: string;
 }
 
 interface PreviewSeries {
@@ -66,9 +67,15 @@ interface ScanReport {
   missing_dates: string[];
   dataset_preview: Array<Record<string, unknown>>;
   time_series_message?: string;
+  has_datetime_axis?: boolean;
 }
 
 export const DataQualityView: React.FC = () => {
+  const WarningBanner = ({ message }: { message: string }) => (
+    <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm">
+      {message}
+    </div>
+  );
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -76,6 +83,7 @@ export const DataQualityView: React.FC = () => {
   const [report, setReport] = useState<ScanReport | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isFixingTimestamps, setIsFixingTimestamps] = useState(false);
+  const [originalFilename, setOriginalFilename] = useState<string | null>(null);
 
   const [selectedOutlierCol, setSelectedOutlierCol] = useState<string | null>(null);
   const [isOutlierModalOpen, setIsOutlierModalOpen] = useState(false);
@@ -130,6 +138,8 @@ export const DataQualityView: React.FC = () => {
 
     return String(value);
   };
+
+  const hasDatetimeAxis = report?.has_datetime_axis !== false;
 
   const renderPreviewChart = (data: PreviewSeries | null, showBefore: boolean = true) => {
     if (!data) {
@@ -243,6 +253,7 @@ export const DataQualityView: React.FC = () => {
     setError(null);
     setReport(null);
     setFileId(null);
+    setOriginalFilename(nextFile.name);
     setFile(nextFile);
   };
 
@@ -365,6 +376,8 @@ export const DataQualityView: React.FC = () => {
       const uploadResult = await uploadResponse.json() as UploadResponse;
       currentFileId = uploadResult.file_id;
       setFileId(currentFileId);
+      setOriginalFilename(uploadResult.original_filename || file?.name || null);
+      setOriginalFilename(uploadResult.original_filename || file?.name || null);
     }
 
     if (!currentFileId) throw new Error('No file available for processing');
@@ -674,6 +687,10 @@ export const DataQualityView: React.FC = () => {
           )}
         </section>
 
+        {report && !hasDatetimeAxis && (
+          <WarningBanner message="Time column not detected. The report is running in General Data mode." />
+        )}
+
         {report && (
           <section className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(340px,1.05fr)_minmax(0,1.95fr)]">
             <article className="min-w-[340px] rounded-2xl border border-slate-200 bg-white p-5 md:p-6 shadow-sm">
@@ -759,7 +776,9 @@ export const DataQualityView: React.FC = () => {
                         <li 
                           key={column} 
                           onClick={() => handleOutlierClick(column)}
-                          className="group flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 hover:border-sky-200 transition-all"
+                          className={`group flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 transition-all ${
+                            hasDatetimeAxis ? 'hover:border-sky-200' : 'hover:border-amber-200'
+                          }`}
                           title="Click to handle outliers"
                         >
                           <div className="flex flex-col">
@@ -772,7 +791,7 @@ export const DataQualityView: React.FC = () => {
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="rounded-md bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">{count}</span>
-                            <svg className="h-4 w-4 text-slate-400 group-hover:text-sky-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <svg className={`h-4 w-4 text-slate-400 transition-colors ${hasDatetimeAxis ? 'group-hover:text-sky-500' : 'group-hover:text-amber-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                             </svg>
                           </div>
@@ -788,15 +807,22 @@ export const DataQualityView: React.FC = () => {
               </div>
             </article>
 
-            <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 md:p-6 shadow-sm">
+            <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 md:p-6 shadow-sm flex flex-col">
               <div className="mb-4 flex items-end justify-between gap-4">
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Dataset Preview</h3>
                   <p className="mt-1 text-sm text-slate-500">First rows from the uploaded dataset.</p>
                 </div>
+                <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                  <svg className="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 4h10l6 6v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 4v6h6" />
+                  </svg>
+                  <span>{originalFilename || file?.name || fileId || 'Dataset'}</span>
+                </div>
               </div>
 
-              <div className="w-full max-w-full overflow-x-auto overflow-y-auto max-h-[60vh] rounded-xl border border-slate-200 scs-scrollbar">
+              <div className="w-full max-w-full overflow-x-auto overflow-y-auto flex-1 min-h-0 rounded-xl border border-slate-200 scs-scrollbar">
                 <table className="min-w-full w-max border-collapse text-sm">
                   <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm text-slate-700">
                     <tr>
@@ -1031,6 +1057,14 @@ export const DataQualityView: React.FC = () => {
                     <option value="6">KNN Imputer (Auto)</option>
                     <option value="7">Do Nothing</option>
                   </select>
+                  {!hasDatetimeAxis && ['1', '2', '3'].includes(missingStrategy) && (
+                    <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                      <svg className="mt-0.5 h-3.5 w-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z" />
+                      </svg>
+                      <span>Ця стратегія базується на припущенні про часову залежність, яка не виявлена у вашому файлі.</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-6 flex justify-end gap-3">

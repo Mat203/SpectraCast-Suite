@@ -66,7 +66,10 @@ def scan_data(
         report = scanner.run_health_check()
         clean_report = convert_numpy_types(report)
 
-        preview_df = df.reset_index().replace({float('nan'): None})
+        if isinstance(df.index, pd.DatetimeIndex):
+            preview_df = df.reset_index().replace({float('nan'): None})
+        else:
+            preview_df = df.copy().replace({float('nan'): None})
         clean_report["dataset_preview"] = preview_df.to_dict(orient="records")
         print(f"[SCAN] Scan completed successfully")
         return clean_report
@@ -291,27 +294,37 @@ def fix_timestamps(
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty")
 
-    if not isinstance(df.index, pd.DatetimeIndex):
-        raise HTTPException(status_code=400, detail="Datetime index not found")
-
     scanner = DataScanner(df)
     report = scanner.run_health_check()
+    datetime_column = scanner._get_datetime_column()
     frequency = report.get("frequency", "Unknown")
     if frequency == "Unknown":
         raise HTTPException(status_code=400, detail="Frequency could not be inferred")
 
-    sorted_df = df.sort_index()
-    new_index = pd.date_range(start=sorted_df.index.min(), end=sorted_df.index.max(), freq=frequency)
-    updated_df = sorted_df.reindex(new_index)
+    if isinstance(df.index, pd.DatetimeIndex):
+        datetime_index = df.index
+        working_df = df.copy()
+    elif datetime_column:
+        datetime_index = pd.to_datetime(df[datetime_column], errors="coerce")
+        working_df = df.copy()
+        working_df[datetime_column] = datetime_index
+        working_df = working_df.dropna(subset=[datetime_column])
+        working_df = working_df.set_index(datetime_column, drop=False)
+    else:
+        raise HTTPException(status_code=400, detail="Datetime column not found")
 
-    inserted_rows = int(len(new_index) - len(sorted_df.index.unique()))
+    working_df = working_df.sort_index()
+    new_index = pd.date_range(start=working_df.index.min(), end=working_df.index.max(), freq=frequency)
+    updated_df = working_df.reindex(new_index)
+    date_column_name = datetime_column or updated_df.index.name or "Date"
+    updated_df[date_column_name] = updated_df.index
+
+    inserted_rows = int(len(new_index) - len(working_df.index.unique()))
 
     save_path = loader.data_dir / file_path
-    if updated_df.index.name is None:
-        updated_df.index.name = "Date"
-    updated_df.to_csv(save_path, index=True)
+    updated_df.to_csv(save_path, index=False)
 
-    preview_df = updated_df.reset_index().replace({float('nan'): None})
+    preview_df = updated_df.reset_index(drop=True).replace({float('nan'): None})
     return FixTimestampsResponse(
         status="success",
         inserted_rows=inserted_rows,

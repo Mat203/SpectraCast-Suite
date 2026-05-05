@@ -3,9 +3,14 @@ import { apiFetch, downloadFile } from '../lib/api';
 import { LLM_MODELS, LLM_PROVIDERS } from '../lib/llmModels';
 import type { LlmProvider } from '../lib/llmModels';
 
+interface DatasetInfo {
+  file_id: string;
+  original_filename?: string | null;
+}
+
 interface ProfileResponse {
   email: string;
-  datasets: string[];
+  datasets: DatasetInfo[];
 }
 
 export const Profile: React.FC = () => {
@@ -334,19 +339,27 @@ export const Profile: React.FC = () => {
 
           {!isLoading && !error && profile && profile.datasets.length > 0 && (
             <ul className="mt-4 space-y-2">
-              {profile.datasets.map((fileId) => (
+              {profile.datasets.map((dataset) => (
                 <li
-                  key={fileId}
+                  key={dataset.file_id}
                   className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
                 >
-                  <span className="font-mono text-xs text-slate-600">{fileId}</span>
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 4h10l6 6v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 4v6h6" />
+                    </svg>
+                    <span className="text-sm font-semibold text-slate-800">
+                      {dataset.original_filename || dataset.file_id}
+                    </span>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => handleDownload(fileId)}
-                    disabled={downloadingId === fileId}
+                    onClick={() => handleDownload(dataset.file_id)}
+                    disabled={downloadingId === dataset.file_id}
                     className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {downloadingId === fileId ? 'Downloading...' : 'Download'}
+                    {downloadingId === dataset.file_id ? 'Downloading...' : 'Download'}
                   </button>
                 </li>
               ))}
