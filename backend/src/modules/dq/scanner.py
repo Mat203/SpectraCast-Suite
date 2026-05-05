@@ -124,13 +124,139 @@ class DataScanner:
 
         return result
 
+    def _seasonal_lag_from_frequency(self, frequency: str) -> Optional[int]:
+        if frequency in {"MS", "ME"}:
+            return 12
+        if frequency == "QS":
+            return 4
+        if frequency == "W":
+            return 52
+        if frequency in {"D", "B"}:
+            return 7
+        if frequency.endswith("D"):
+            try:
+                day_stride = int(frequency[:-1])
+            except ValueError:
+                return None
+            if day_stride > 0:
+                return max(1, int(round(365 / day_stride)))
+        return None
+
+    def _is_financial_asset(self, column_name: str) -> bool:
+        name = column_name.lower()
+        tokens = (
+            "price",
+            "close",
+            "open",
+            "high",
+            "low",
+            "volume",
+            "fx",
+            "rate",
+            "yield",
+            "usd",
+            "eur",
+            "gbp",
+            "jpy",
+            "btc",
+            "eth",
+            "stock",
+            "equity",
+            "index",
+        )
+        return any(token in name for token in tokens)
+
+    def recommend_missing_value_strategy(self, column_name: str, frequency: str) -> Optional[Dict[str, Any]]:
+        if column_name not in self.df.columns:
+            return None
+
+        series = self.df[column_name]
+        if not pd.api.types.is_numeric_dtype(series):
+            return None
+
+        total_count = len(series)
+        missing_count = int(series.isna().sum())
+        if missing_count == 0 or total_count == 0:
+            return None
+
+        available = series.dropna()
+        if available.empty:
+            return None
+
+        mean_val = float(available.mean())
+        std_val = float(available.std(ddof=0))
+        cv = std_val / abs(mean_val) if mean_val != 0 else float("inf")
+
+        autocorr_lag1 = available.autocorr(lag=1)
+        autocorr_lag1 = float(autocorr_lag1) if not np.isnan(autocorr_lag1) else 0.0
+
+        seasonal_lag = self._seasonal_lag_from_frequency(frequency)
+        seasonal_corr = 0.0
+        if seasonal_lag and len(available) > seasonal_lag:
+            seasonal_value = available.autocorr(lag=seasonal_lag)
+            seasonal_corr = float(seasonal_value) if not np.isnan(seasonal_value) else 0.0
+
+        numeric_cols = self.df.select_dtypes(include=[np.number]).columns
+        max_corr = 0.0
+        if len(numeric_cols) > 1 and column_name in numeric_cols:
+            corr_matrix = self.df[numeric_cols].corr()
+            if column_name in corr_matrix:
+                other_corrs = corr_matrix[column_name].drop(labels=[column_name]).abs()
+                if not other_corrs.empty:
+                    max_corr = float(other_corrs.max())
+
+        missing_ratio = missing_count / total_count if total_count else 1.0
+
+        if seasonal_corr > 0.6:
+            strategy_code = "5"
+            strategy_label = "seasonal_mean"
+            reasoning = (
+                "Detected a strong seasonal pattern, so seasonal means preserve cyclical behavior."
+            )
+        elif cv < 0.15 and autocorr_lag1 > 0.8:
+            strategy_code = "1"
+            strategy_label = "linear"
+            reasoning = (
+                "Low volatility and strong trend continuity make linear interpolation reliable."
+            )
+        elif cv >= 0.15 or self._is_financial_asset(column_name):
+            strategy_code = "3"
+            strategy_label = "ffill"
+            reasoning = (
+                "High volatility or financial pricing favors forward fill to avoid creating artificial trends."
+            )
+        elif missing_ratio < 0.1 and max_corr > 0.6:
+            strategy_code = "6"
+            strategy_label = "knn"
+            reasoning = (
+                "Few missing values and strong cross-column correlation support KNN imputation."
+            )
+        else:
+            strategy_code = "1"
+            strategy_label = "linear"
+            reasoning = "Defaulted to linear interpolation for a smooth, low-bias fill."
+
+        return {
+            "strategy_code": strategy_code,
+            "strategy": strategy_label,
+            "reasoning": reasoning,
+            "metrics": {
+                "cv": cv,
+                "autocorr_lag1": autocorr_lag1,
+                "seasonal_corr": seasonal_corr,
+                "missing_ratio": missing_ratio,
+                "max_corr": max_corr,
+            },
+        }
+
     def run_health_check(self) -> Dict[str, Any]:
         report = {
             "rows": len(self.df),
             "columns": list(self.df.columns),
             "outliers": {},
             "outlier_strategy_recommendations": {},
-            "missing_values": self.df.isna().sum().to_dict()
+            "missing_values": self.df.isna().sum().to_dict(),
+            "missing_value_strategy_recommendations": {},
         }
 
         if self._has_datetime_axis():
@@ -146,6 +272,7 @@ class DataScanner:
             })
 
         numeric_cols = self.df.select_dtypes(include=[np.number]).columns
+        frequency = report.get("frequency", "Unknown")
         
         for col in numeric_cols:
             z_scores = np.abs(stats.zscore(self.df[col], nan_policy='omit'))
@@ -182,6 +309,11 @@ class DataScanner:
                 "strategy": strategy,
                 "reasoning": reasoning,
             }
+
+            if report["missing_values"].get(col, 0) > 0:
+                missing_rec = self.recommend_missing_value_strategy(col, frequency)
+                if missing_rec:
+                    report["missing_value_strategy_recommendations"][col] = missing_rec
 
         return report
 

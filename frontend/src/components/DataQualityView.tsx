@@ -45,6 +45,21 @@ interface ScanReport {
     }
   >;
   missing_values: Record<string, number>;
+  missing_value_strategy_recommendations?: Record<
+    string,
+    {
+      strategy_code: MissingStrategyKey;
+      strategy: string;
+      reasoning: string;
+      metrics?: {
+        cv?: number;
+        autocorr_lag1?: number;
+        seasonal_corr?: number;
+        missing_ratio?: number;
+        max_corr?: number;
+      };
+    }
+  >;
   frequency: string;
   display_frequency: string;
   missing_dates_count: number;
@@ -414,9 +429,11 @@ export const DataQualityView: React.FC = () => {
   };
 
   const handleMissingClick = (column: string) => {
+    const recommendation = report?.missing_value_strategy_recommendations?.[column]?.strategy_code;
+    const nextStrategy = recommendation || '3';
     setSelectedMissingCol(column);
-    setMissingStrategy('3');
-    setMissingStrategyPreview('3');
+    setMissingStrategy(nextStrategy);
+    setMissingStrategyPreview(nextStrategy);
     setIsMissingPanelVisible(true);
     setMissingPreviewData(null);
     setMissingPreviewError(null);
@@ -647,7 +664,14 @@ export const DataQualityView: React.FC = () => {
                           className={`group flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm ${count > 0 ? 'cursor-pointer hover:bg-slate-50 hover:border-amber-200 transition-all' : ''}`}
                           title={count > 0 ? "Click to handle missing values" : "No missing values"}
                         >
-                          <span className="font-medium text-slate-700">{column}</span>
+                          <div className="flex flex-col">
+                            <span className="font-medium text-slate-700">{column}</span>
+                            {report.missing_value_strategy_recommendations?.[column] && (
+                              <span className="text-xs text-slate-500">
+                                Recommended: {report.missing_value_strategy_recommendations[column].strategy}
+                              </span>
+                            )}
+                          </div>
                           {count > 0 ? (
                             <div className="flex items-center gap-2">
                               <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
@@ -919,6 +943,13 @@ export const DataQualityView: React.FC = () => {
                 <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
                   Column: <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{selectedMissingCol}</span>
                 </p>
+                {report?.missing_value_strategy_recommendations?.[selectedMissingCol] && (
+                  <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    <span className="font-semibold text-slate-700">Recommended:</span>{' '}
+                    {report.missing_value_strategy_recommendations[selectedMissingCol].strategy} —{' '}
+                    {report.missing_value_strategy_recommendations[selectedMissingCol].reasoning}
+                  </p>
+                )}
 
                 <div className="mt-5">
                   <label htmlFor="missing-strategy" className="mb-2 block text-sm font-medium text-slate-700">
