@@ -48,3 +48,11 @@ class MissingPreviewResponse(BaseModel):
     x: List[str]
     before: List[Optional[float]]
     after: List[Optional[float]]
+
+class FixTimestampsRequest(BaseModel):
+    file_id: str
+
+class FixTimestampsResponse(BaseModel):
+    status: str
+    inserted_rows: int
+    dataset_preview: List[Dict[str, Any]]

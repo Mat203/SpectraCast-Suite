@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, downloadFile } from '../lib/api';
 import { STRATEGY_DESCRIPTIONS } from '../lib/outlierStrategies';
 import type { OutlierStrategyKey } from '../lib/outlierStrategies';
@@ -74,6 +74,8 @@ export const DataQualityView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ScanReport | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isFixingTimestamps, setIsFixingTimestamps] = useState(false);
 
   const [selectedOutlierCol, setSelectedOutlierCol] = useState<string | null>(null);
   const [isOutlierModalOpen, setIsOutlierModalOpen] = useState(false);
@@ -97,6 +99,12 @@ export const DataQualityView: React.FC = () => {
   const [fileId, setFileId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = window.setTimeout(() => setToastMessage(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [toastMessage]);
 
   const previewColumns = useMemo(() => {
     if (!report?.dataset_preview?.length) {
@@ -519,6 +527,40 @@ export const DataQualityView: React.FC = () => {
     }
   };
 
+  const handleFixTimestamps = async () => {
+    if (!report || report.missing_dates_count === 0) {
+      return;
+    }
+
+    setIsFixingTimestamps(true);
+    setError(null);
+
+    try {
+      const currentFileId = await resolveFileId();
+      const response = await apiFetch('/api/dq/fix-timestamps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_id: currentFileId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json() as { detail?: string };
+        throw new Error(errorData.detail || 'Fix timestamps failed');
+      }
+
+      const result = await response.json() as { inserted_rows: number };
+      setToastMessage(
+        `Time axis restored! ${result.inserted_rows} empty rows inserted. Please select an imputation strategy to fill data gaps.`,
+      );
+
+      await handleScan(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Fix timestamps failed');
+    } finally {
+      setIsFixingTimestamps(false);
+    }
+  };
+
   const handleDownloadDataset = async () => {
     if (!fileId) {
       return;
@@ -535,6 +577,11 @@ export const DataQualityView: React.FC = () => {
 
   return (
     <div className="flex-1 h-full bg-slate-100 p-4 md:p-8 overflow-auto">
+      {toastMessage && (
+        <div className="fixed right-6 top-6 z-50 max-w-md rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 shadow-xl">
+          {toastMessage}
+        </div>
+      )}
       <div className="mx-auto w-full max-w-7xl">
         <div className="mb-6 md:mb-8">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Data Quality Module</h2>
@@ -645,6 +692,14 @@ export const DataQualityView: React.FC = () => {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Date Gaps</p>
                   <p className="mt-1 text-2xl font-bold text-slate-900">{report.missing_dates_count}</p>
+                  <button
+                    type="button"
+                    onClick={handleFixTimestamps}
+                    disabled={isFixingTimestamps || report.missing_dates_count === 0}
+                    className="mt-3 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isFixingTimestamps ? 'Inserting...' : 'Insert Dates'}
+                  </button>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Detected Outlier Columns</p>

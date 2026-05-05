@@ -11,6 +11,8 @@ from backend.src.api.models.dq import (
     OutlierPreviewResponse,
     MissingPreviewRequest,
     MissingPreviewResponse,
+    FixTimestampsRequest,
+    FixTimestampsResponse,
 )
 from backend.src.api.db import get_db
 from backend.src.api.db_models import User
@@ -264,7 +266,6 @@ def handle_missing(
     cleaner = DataCleaner(df)
     cleaner.impute_column(request.column, request.strategy)
 
-    # Save logic
     save_path = loader.data_dir / file_path
     if isinstance(cleaner.df.index, pd.DatetimeIndex):
         df_to_save = cleaner.df.copy()
@@ -275,6 +276,47 @@ def handle_missing(
         cleaner.df.to_csv(save_path, index=False)
 
     return {"status": "success", "message": f"Successfully applied strategy {request.strategy} for missing values in {request.column}"}
+
+@router.post("/fix-timestamps", response_model=FixTimestampsResponse)
+def fix_timestamps(
+    request: FixTimestampsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner(db, current_user.id, request.file_id)
+    loader = DataLoader(data_folder_name="uploads")
+    file_path = f"{request.file_id}_raw.csv"
+    df = loader.load_csv(file_path)
+
+    if df is None:
+        raise HTTPException(status_code=404, detail="File not found or empty")
+
+    if not isinstance(df.index, pd.DatetimeIndex):
+        raise HTTPException(status_code=400, detail="Datetime index not found")
+
+    scanner = DataScanner(df)
+    report = scanner.run_health_check()
+    frequency = report.get("frequency", "Unknown")
+    if frequency == "Unknown":
+        raise HTTPException(status_code=400, detail="Frequency could not be inferred")
+
+    sorted_df = df.sort_index()
+    new_index = pd.date_range(start=sorted_df.index.min(), end=sorted_df.index.max(), freq=frequency)
+    updated_df = sorted_df.reindex(new_index)
+
+    inserted_rows = int(len(new_index) - len(sorted_df.index.unique()))
+
+    save_path = loader.data_dir / file_path
+    if updated_df.index.name is None:
+        updated_df.index.name = "Date"
+    updated_df.to_csv(save_path, index=True)
+
+    preview_df = updated_df.reset_index().replace({float('nan'): None})
+    return FixTimestampsResponse(
+        status="success",
+        inserted_rows=inserted_rows,
+        dataset_preview=preview_df.to_dict(orient="records"),
+    )
 
 @router.post("/preview-missing", response_model=MissingPreviewResponse)
 def preview_missing(
