@@ -10,7 +10,21 @@ interface UploadResponse {
   file_id: string;
 }
 
+interface PreviewSeries {
+  x: string[];
+  before: Array<number | null>;
+  after: Array<number | null>;
+}
+
 interface OutlierPreviewResponse {
+  column: string;
+  strategy: string;
+  x: string[];
+  before: Array<number | null>;
+  after: Array<number | null>;
+}
+
+interface MissingPreviewResponse {
   column: string;
   strategy: string;
   x: string[];
@@ -61,6 +75,9 @@ export const DataQualityView: React.FC = () => {
   const [missingStrategy, setMissingStrategy] = useState<MissingStrategyKey>('3'); // Default: Forward Fill
   const [missingStrategyPreview, setMissingStrategyPreview] = useState<MissingStrategyKey>('3');
   const [isMissingPanelVisible, setIsMissingPanelVisible] = useState(false);
+  const [missingPreviewData, setMissingPreviewData] = useState<MissingPreviewResponse | null>(null);
+  const [isMissingPreviewLoading, setIsMissingPreviewLoading] = useState(false);
+  const [missingPreviewError, setMissingPreviewError] = useState<string | null>(null);
 
   const [fileId, setFileId] = useState<string | null>(null);
 
@@ -91,12 +108,12 @@ export const DataQualityView: React.FC = () => {
     return String(value);
   };
 
-  const renderPreviewChart = () => {
-    if (!previewData) {
+  const renderPreviewChart = (data: PreviewSeries | null, showBefore: boolean = true) => {
+    if (!data) {
       return null;
     }
 
-    const combinedValues = [...previewData.before, ...previewData.after].filter(
+    const combinedValues = [...(showBefore ? data.before : []), ...data.after].filter(
       (value): value is number => typeof value === 'number' && !Number.isNaN(value),
     );
 
@@ -122,8 +139,8 @@ export const DataQualityView: React.FC = () => {
       return datePart || value;
     };
 
-    const startLabel = formatXAxisLabel(previewData.x[0] ?? '');
-    const endLabel = formatXAxisLabel(previewData.x[previewData.x.length - 1] ?? '');
+    const startLabel = formatXAxisLabel(data.x[0] ?? '');
+    const endLabel = formatXAxisLabel(data.x[data.x.length - 1] ?? '');
 
     const buildPath = (values: Array<number | null>) => {
       let path = '';
@@ -153,15 +170,17 @@ export const DataQualityView: React.FC = () => {
     return (
       <div className="space-y-2">
         <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full">
+          {showBefore && (
+            <path
+              d={buildPath(data.before)}
+              fill="none"
+              stroke="#94a3b8"
+              strokeWidth={2}
+              strokeDasharray="6 4"
+            />
+          )}
           <path
-            d={buildPath(previewData.before)}
-            fill="none"
-            stroke="#94a3b8"
-            strokeWidth={2}
-            strokeDasharray="6 4"
-          />
-          <path
-            d={buildPath(previewData.after)}
+            d={buildPath(data.after)}
             fill="none"
             stroke="#3b82f6"
             strokeWidth={2.5}
@@ -173,13 +192,15 @@ export const DataQualityView: React.FC = () => {
           <span>{endLabel}</span>
         </div>
         <div className="flex items-center gap-4 text-[11px] text-slate-500">
-          <span className="flex items-center gap-2">
-            <span className="h-0.5 w-6 border-b-2 border-dashed border-slate-400" />
-            Before
-          </span>
+          {showBefore && (
+            <span className="flex items-center gap-2">
+              <span className="h-0.5 w-6 border-b-2 border-dashed border-slate-400" />
+              Before
+            </span>
+          )}
           <span className="flex items-center gap-2">
             <span className="h-0.5 w-6 bg-blue-500" />
-            After
+            After applying strategy
           </span>
         </div>
       </div>
@@ -352,7 +373,7 @@ export const DataQualityView: React.FC = () => {
       }
 
       setIsOutlierModalOpen(false);
-      await handleScan(true); // Rescan existing file_id, don't re-upload local file
+      await handleScan(true);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -397,6 +418,8 @@ export const DataQualityView: React.FC = () => {
     setMissingStrategy('3');
     setMissingStrategyPreview('3');
     setIsMissingPanelVisible(true);
+    setMissingPreviewData(null);
+    setMissingPreviewError(null);
     setIsMissingModalOpen(true);
   };
 
@@ -445,6 +468,37 @@ export const DataQualityView: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setIsProcessingAction(false);
+    }
+  };
+
+  const handlePreviewMissing = async () => {
+    if (!selectedMissingCol) return;
+    setIsMissingPreviewLoading(true);
+    setMissingPreviewError(null);
+
+    try {
+      const currentFileId = await resolveFileId();
+      const response = await apiFetch('/api/dq/preview-missing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_id: currentFileId,
+          column: selectedMissingCol,
+          strategy: missingStrategy,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json() as { detail?: string };
+        throw new Error(errorData.detail || 'Preview failed');
+      }
+
+      const previewResult = (await response.json()) as MissingPreviewResponse;
+      setMissingPreviewData(previewResult);
+    } catch (err) {
+      setMissingPreviewError(err instanceof Error ? err.message : 'Preview failed');
+    } finally {
+      setIsMissingPreviewLoading(false);
     }
   };
 
@@ -700,7 +754,7 @@ export const DataQualityView: React.FC = () => {
 
                 <div className="relative mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
                   {previewData ? (
-                    renderPreviewChart()
+                    renderPreviewChart(previewData)
                   ) : (
                     <div className="space-y-3 blur-sm">
                       <div className="h-3 w-3/4 rounded-full bg-slate-200" />
@@ -822,7 +876,44 @@ export const DataQualityView: React.FC = () => {
 
         {isMissingModalOpen && selectedMissingCol && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-4xl grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+            <div className="w-full max-w-7xl grid gap-4 lg:grid-cols-[1.1fr_0.95fr_0.9fr]">
+              <div className="rounded-2xl bg-white p-7 shadow-2xl">
+                <h3 className="text-lg font-semibold text-slate-900">Preview</h3>
+                <p className="mt-1 text-xs text-slate-500">Compare before vs after for this strategy.</p>
+
+                <div className="relative mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  {missingPreviewData ? (
+                    renderPreviewChart(missingPreviewData, false)
+                  ) : (
+                    <div className="space-y-3 blur-sm">
+                      <div className="h-3 w-3/4 rounded-full bg-slate-200" />
+                      <div className="h-3 w-5/6 rounded-full bg-slate-200" />
+                      <div className="h-28 rounded-lg bg-slate-100" />
+                      <div className="h-3 w-2/3 rounded-full bg-slate-200" />
+                    </div>
+                  )}
+
+                  {!missingPreviewData && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-white/70 backdrop-blur-sm">
+                      <button
+                        type="button"
+                        onClick={handlePreviewMissing}
+                        disabled={isMissingPreviewLoading}
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isMissingPreviewLoading ? 'Generating preview...' : 'Preview data for this strategy'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {missingPreviewError && (
+                  <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                    {missingPreviewError}
+                  </p>
+                )}
+              </div>
+
               <div className="rounded-2xl bg-white p-7 shadow-2xl">
                 <h2 className="text-xl font-bold text-slate-800">Handle Missing Values</h2>
                 <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
@@ -841,6 +932,8 @@ export const DataQualityView: React.FC = () => {
                       setMissingStrategy(nextValue);
                       setMissingStrategyPreview(nextValue);
                       setIsMissingPanelVisible(true);
+                      setMissingPreviewData(null);
+                      setMissingPreviewError(null);
                     }}
                     onFocus={() => setIsMissingPanelVisible(true)}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"

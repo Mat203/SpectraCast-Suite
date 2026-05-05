@@ -36,3 +36,15 @@ class MissingValueActionRequest(BaseModel):
     file_id: str
     column: str
     strategy: str
+
+class MissingPreviewRequest(BaseModel):
+    file_id: str
+    column: str
+    strategy: str
+
+class MissingPreviewResponse(BaseModel):
+    column: str
+    strategy: str
+    x: List[str]
+    before: List[Optional[float]]
+    after: List[Optional[float]]
