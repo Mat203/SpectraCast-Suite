@@ -18,17 +18,17 @@ from backend.src.api.db import get_db
 from backend.src.api.db_models import User
 from backend.src.api.deps import get_current_user
 from backend.src.api.services.datasets import require_dataset_owner
+from backend.src.api.services.storage import StorageService
 from backend.src.core.loader import DataLoader
 from backend.src.modules.dq.scanner import DataScanner
 from backend.src.modules.dq.cleaner import DataCleaner
-from fastapi.responses import FileResponse
-from pathlib import Path
+from fastapi.responses import StreamingResponse
 import numpy as np
-from scipy import stats
 import pandas as pd
 import os
 
 router = APIRouter()
+storage = StorageService()
 
 def convert_numpy_types(obj: Any) -> Any:
     if isinstance(obj, dict):
@@ -52,7 +52,7 @@ def scan_data(
     try:
         require_dataset_owner(db, current_user.id, request.file_id)
         print(f"[SCAN] Starting scan for file_id: {request.file_id}")
-        loader = DataLoader(data_folder_name="uploads")
+        loader = DataLoader(data_folder_name="uploads", storage=storage)
         
         file_path = f"{request.file_id}_raw.csv"
         print(f"[SCAN] Loading CSV: {file_path}")
@@ -88,7 +88,7 @@ def clean_data(
     db: Session = Depends(get_db),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
-    loader = DataLoader(data_folder_name="uploads")
+    loader = DataLoader(data_folder_name="uploads", storage=storage)
     df = loader.load_csv(f"{request.file_id}_raw.csv")
 
     if df is None:
@@ -113,17 +113,14 @@ def clean_data(
 
         cleaner.detect_and_handle_outliers(col, method)
 
-    outputs_dir = loader.data_dir.parent / "outputs"
-    outputs_dir.mkdir(parents=True, exist_ok=True)
-
     file_id_safe = os.path.basename(request.file_id)
-    save_path = outputs_dir / f"{file_id_safe}_cleaned.csv"
-    cleaner.df.to_csv(save_path)
+    save_key = storage.join_key("outputs", f"{file_id_safe}_cleaned.csv")
+    storage.write_csv(save_key, cleaner.df, include_index=True)
 
     return CleanResponse(
         status="success",
         message="Data cleaned successfully",
-        saved_path=str(save_path)
+        saved_path=save_key
     )
 
 @router.post("/handle-outliers")
@@ -133,7 +130,7 @@ def handle_outliers(
     db: Session = Depends(get_db),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
-    loader = DataLoader(data_folder_name="uploads")
+    loader = DataLoader(data_folder_name="uploads", storage=storage)
     file_path = f"{request.file_id}_raw.csv"
     df = loader.load_csv(file_path)
 
@@ -171,14 +168,13 @@ def handle_outliers(
     else:
         raise HTTPException(status_code=400, detail="Invalid strategy")
 
-    save_path = loader.data_dir / file_path
     if isinstance(df.index, pd.DatetimeIndex):
         df_to_save = df.copy()
         if df_to_save.index.name is None:
             df_to_save.index.name = "Date"
-        df_to_save.to_csv(save_path, index=True)
+        storage.write_csv(storage.join_key("uploads", file_path), df_to_save, include_index=True)
     else:
-        df.to_csv(save_path, index=False)
+        storage.write_csv(storage.join_key("uploads", file_path), df, include_index=False)
 
     return {"status": "success", "message": f"Successfully applied {request.strategy} to {request.column}"}
 
@@ -189,7 +185,7 @@ def preview_outliers(
     db: Session = Depends(get_db),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
-    loader = DataLoader(data_folder_name="uploads")
+    loader = DataLoader(data_folder_name="uploads", storage=storage)
     file_path = f"{request.file_id}_raw.csv"
     df = loader.load_csv(file_path)
 
@@ -256,7 +252,7 @@ def handle_missing(
     db: Session = Depends(get_db),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
-    loader = DataLoader(data_folder_name="uploads")
+    loader = DataLoader(data_folder_name="uploads", storage=storage)
     file_path = f"{request.file_id}_raw.csv"
     df = loader.load_csv(file_path)
 
@@ -269,14 +265,13 @@ def handle_missing(
     cleaner = DataCleaner(df)
     cleaner.impute_column(request.column, request.strategy)
 
-    save_path = loader.data_dir / file_path
     if isinstance(cleaner.df.index, pd.DatetimeIndex):
         df_to_save = cleaner.df.copy()
         if df_to_save.index.name is None:
             df_to_save.index.name = "Date"
-        df_to_save.to_csv(save_path, index=True)
+        storage.write_csv(storage.join_key("uploads", file_path), df_to_save, include_index=True)
     else:
-        cleaner.df.to_csv(save_path, index=False)
+        storage.write_csv(storage.join_key("uploads", file_path), cleaner.df, include_index=False)
 
     return {"status": "success", "message": f"Successfully applied strategy {request.strategy} for missing values in {request.column}"}
 
@@ -287,7 +282,7 @@ def fix_timestamps(
     db: Session = Depends(get_db),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
-    loader = DataLoader(data_folder_name="uploads")
+    loader = DataLoader(data_folder_name="uploads", storage=storage)
     file_path = f"{request.file_id}_raw.csv"
     df = loader.load_csv(file_path)
 
@@ -321,8 +316,7 @@ def fix_timestamps(
 
     inserted_rows = int(len(new_index) - len(working_df.index.unique()))
 
-    save_path = loader.data_dir / file_path
-    updated_df.to_csv(save_path, index=False)
+    storage.write_csv(storage.join_key("uploads", file_path), updated_df, include_index=False)
 
     preview_df = updated_df.reset_index(drop=True).replace({float('nan'): None})
     return FixTimestampsResponse(
@@ -338,7 +332,7 @@ def preview_missing(
     db: Session = Depends(get_db),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
-    loader = DataLoader(data_folder_name="uploads")
+    loader = DataLoader(data_folder_name="uploads", storage=storage)
     file_path = f"{request.file_id}_raw.csv"
     df = loader.load_csv(file_path)
 
@@ -388,14 +382,12 @@ def download_dataset(
     db: Session = Depends(get_db),
 ):
     require_dataset_owner(db, current_user.id, file_id)
-    loader = DataLoader(data_folder_name="uploads")
-    
-    file_path = loader.data_dir / f"{file_id}_raw.csv"
-    if not file_path.exists() or not file_path.is_file():
+    key = storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
+    if not storage.exists(key):
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    return FileResponse(
-        path=file_path,
+    return StreamingResponse(
+        storage.stream_object(key),
         media_type="text/csv",
-        filename=f"updated_dataset_{file_id}.csv",
+        headers={"Content-Disposition": f"attachment; filename=updated_dataset_{file_id}.csv"},
     )
