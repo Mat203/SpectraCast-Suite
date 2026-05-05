@@ -31,7 +31,8 @@ class DataCleaner:
         elif method == '3':
             self.df[column] = self.df[column].ffill()
         elif method == '4':
-            self.df[column] = self.df[column].bfill()
+            self.logger.warning("Backward fill is disabled to avoid look-ahead bias.")
+            return
         elif method == '5':
             if isinstance(self.df.index, pd.DatetimeIndex):
                 self.df[column] = self.df.groupby(self.df.index.month)[column].transform(lambda x: x.fillna(x.mean()))

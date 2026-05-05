@@ -2,6 +2,8 @@ import React, { useMemo, useRef, useState } from 'react';
 import { apiFetch, downloadFile } from '../lib/api';
 import { STRATEGY_DESCRIPTIONS } from '../lib/outlierStrategies';
 import type { OutlierStrategyKey } from '../lib/outlierStrategies';
+import { MISSING_VALUES_DESCRIPTIONS } from '../lib/missingValueStrategies';
+import type { MissingStrategyKey } from '../lib/missingValueStrategies';
 
 interface UploadResponse {
   status: string;
@@ -56,7 +58,9 @@ export const DataQualityView: React.FC = () => {
 
   const [selectedMissingCol, setSelectedMissingCol] = useState<string | null>(null);
   const [isMissingModalOpen, setIsMissingModalOpen] = useState(false);
-  const [missingStrategy, setMissingStrategy] = useState('3'); // Default: Forward Fill
+  const [missingStrategy, setMissingStrategy] = useState<MissingStrategyKey>('3'); // Default: Forward Fill
+  const [missingStrategyPreview, setMissingStrategyPreview] = useState<MissingStrategyKey>('3');
+  const [isMissingPanelVisible, setIsMissingPanelVisible] = useState(false);
 
   const [fileId, setFileId] = useState<string | null>(null);
 
@@ -391,6 +395,8 @@ export const DataQualityView: React.FC = () => {
   const handleMissingClick = (column: string) => {
     setSelectedMissingCol(column);
     setMissingStrategy('3');
+    setMissingStrategyPreview('3');
+    setIsMissingPanelVisible(true);
     setIsMissingModalOpen(true);
   };
 
@@ -658,7 +664,7 @@ export const DataQualityView: React.FC = () => {
               </div>
 
               <div className="w-full max-w-full overflow-x-auto overflow-y-auto max-h-[60vh] rounded-xl border border-slate-200 scs-scrollbar">
-                <table className="min-w-max border-collapse text-sm">
+                <table className="min-w-full w-max border-collapse text-sm">
                   <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm text-slate-700">
                     <tr>
                       {previewColumns.map((column) => (
@@ -816,60 +822,84 @@ export const DataQualityView: React.FC = () => {
 
         {isMissingModalOpen && selectedMissingCol && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-              <h2 className="text-xl font-bold text-slate-800">Handle Missing Values</h2>
-              <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
-                Column: <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{selectedMissingCol}</span>
-              </p>
+            <div className="w-full max-w-4xl grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-2xl bg-white p-7 shadow-2xl">
+                <h2 className="text-xl font-bold text-slate-800">Handle Missing Values</h2>
+                <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
+                  Column: <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{selectedMissingCol}</span>
+                </p>
 
-              <div className="mt-5">
-                <label htmlFor="missing-strategy" className="mb-2 block text-sm font-medium text-slate-700">
-                  Select Strategy
-                </label>
-                <select
-                  id="missing-strategy"
-                  value={missingStrategy}
-                  onChange={(e) => setMissingStrategy(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                >
-                  <option value="1">Linear Interpolation</option>
-                  <option value="2">Spline Interpolation</option>
-                  <option value="3">Forward Fill</option>
-                  <option value="4">Backward Fill</option>
-                  <option value="5">Seasonal Mean Fill</option>
-                  <option value="6">KNN Imputer (Auto)</option>
-                  <option value="7">Do Nothing</option>
-                </select>
+                <div className="mt-5">
+                  <label htmlFor="missing-strategy" className="mb-2 block text-sm font-medium text-slate-700">
+                    Select Strategy
+                  </label>
+                  <select
+                    id="missing-strategy"
+                    value={missingStrategy}
+                    onChange={(e) => {
+                      const nextValue = e.target.value as MissingStrategyKey;
+                      setMissingStrategy(nextValue);
+                      setMissingStrategyPreview(nextValue);
+                      setIsMissingPanelVisible(true);
+                    }}
+                    onFocus={() => setIsMissingPanelVisible(true)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    <option value="1">Linear Interpolation</option>
+                    <option value="2">Spline Interpolation</option>
+                    <option value="3">Forward Fill</option>
+                    <option value="5">Seasonal Mean Fill</option>
+                    <option value="6">KNN Imputer (Auto)</option>
+                    <option value="7">Do Nothing</option>
+                  </select>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsMissingModalOpen(false)}
+                    disabled={isProcessingAction}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyMissingStrategy}
+                    disabled={isProcessingAction}
+                    className="inline-flex items-center rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:bg-amber-400"
+                  >
+                    {isProcessingAction ? (
+                      <>
+                        <svg className="mr-2 h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Applying...
+                      </>
+                    ) : (
+                      'Apply & Rescan'
+                    )}
+                  </button>
+                </div>
               </div>
 
-              <div className="mt-6 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsMissingModalOpen(false)}
-                  disabled={isProcessingAction}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleApplyMissingStrategy}
-                  disabled={isProcessingAction}
-                  className="inline-flex items-center rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:bg-amber-400"
-                >
-                  {isProcessingAction ? (
-                    <>
-                      <svg className="mr-2 h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Applying...
-                    </>
-                  ) : (
-                    'Apply & Rescan'
-                  )}
-                </button>
-              </div>
+              <aside
+                className={`rounded-2xl border border-amber-800/50 bg-amber-950 px-7 py-6 text-xs text-amber-100 shadow-2xl transition-all duration-200 ${
+                  isMissingPanelVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1'
+                }`}
+              >
+                <p className="text-[11px] uppercase tracking-[0.2em] text-amber-300">Strategy Guide</p>
+                <p className="mt-3 text-lg font-semibold text-white">
+                  {MISSING_VALUES_DESCRIPTIONS[missingStrategyPreview].title}
+                </p>
+                <p className="mt-2 text-[12px] text-amber-100">
+                  {MISSING_VALUES_DESCRIPTIONS[missingStrategyPreview].what}
+                </p>
+                <p className="mt-4 text-[12px] text-amber-200">
+                  {MISSING_VALUES_DESCRIPTIONS[missingStrategyPreview].when}
+                </p>
+              </aside>
             </div>
           </div>
         )}
