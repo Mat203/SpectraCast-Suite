@@ -44,7 +44,8 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://localhost",
-        "http://127.0.0.1"
+        "http://127.0.0.1",
+        "https://main.d2ngm2jjs20ipn.amplifyapp.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],
