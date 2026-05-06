@@ -1,6 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import FileResponse
-import base64
+from fastapi.responses import StreamingResponse
 import os
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -9,11 +8,13 @@ from backend.src.api.db import get_db
 from backend.src.api.db_models import User
 from backend.src.api.deps import get_current_user
 from backend.src.api.services.datasets import require_dataset_owner, require_dataset_owner_for_filename
+from backend.src.api.services.storage import StorageService
 from backend.src.core.loader import DataLoader
 from backend.src.modules.vs.vs import PlotEngine
 from backend.src.modules.vs.visualizer import VisualStandardizer
 
 router = APIRouter()
+storage = StorageService()
 
 from pydantic import BaseModel
 from typing import List
@@ -40,10 +41,10 @@ def generate_plot(
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
     if request.is_cleaned:
-        loader = DataLoader(data_folder_name="outputs")
+        loader = DataLoader(data_folder_name="outputs", storage=storage)
         filename = f"{request.file_id}_cleaned.csv"
     else:
-        loader = DataLoader(data_folder_name="uploads")
+        loader = DataLoader(data_folder_name="uploads", storage=storage)
         filename = f"{request.file_id}_raw.csv"
 
     df = loader.load_csv(filename)
@@ -51,11 +52,9 @@ def generate_plot(
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty")
 
-    backend_dir = Path(__file__).resolve().parents[3]
-
     engine = PlotEngine(
-        output_dir=backend_dir / "outputs",
-        config_dir=backend_dir / "style_config"
+        output_dir=Path(__file__).resolve().parents[3] / "outputs",
+        config_dir=Path(__file__).resolve().parents[3] / "style_config"
     )
 
     if request.style_filename or request.style_name:
@@ -79,6 +78,10 @@ def generate_plot(
     if not output_path or not output_path.exists():
         raise HTTPException(status_code=500, detail="Failed to generate plot")
 
+    output_key = storage.join_key("outputs", output_filename)
+    storage.put_bytes(output_key, output_path.read_bytes(), content_type="image/png")
+    output_path.unlink(missing_ok=True)
+
     return GeneratePlotResponse(
         status="success",
         plot_filename=output_filename
@@ -91,13 +94,12 @@ def get_plot(
     db: Session = Depends(get_db),
 ):
     require_dataset_owner_for_filename(db, current_user.id, filename)
-    backend_dir = Path(__file__).resolve().parents[3]
-    plot_path = backend_dir / "outputs" / filename
-    
-    if not plot_path.exists():
+    key = storage.join_key("outputs", filename)
+
+    if not storage.exists(key):
         raise HTTPException(status_code=404, detail="Plot not found")
-        
-    return FileResponse(plot_path)
+
+    return StreamingResponse(storage.stream_object(key), media_type="image/png")
 
 @router.get("/download/{filename}")
 def download_plot(
@@ -106,16 +108,15 @@ def download_plot(
     db: Session = Depends(get_db),
 ):
     require_dataset_owner_for_filename(db, current_user.id, filename)
-    backend_dir = Path(__file__).resolve().parents[3]
-    plot_path = backend_dir / "outputs" / filename
-    
-    if not plot_path.exists():
+    key = storage.join_key("outputs", filename)
+
+    if not storage.exists(key):
         raise HTTPException(status_code=404, detail="Plot not found")
-        
-    return FileResponse(
-        path=plot_path,
+
+    return StreamingResponse(
+        storage.stream_object(key),
         media_type="image/png",
-        filename=filename,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 @router.post("/standardize-code", response_model=StandardizeCodeResponse)

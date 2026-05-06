@@ -184,7 +184,6 @@ export const Login: React.FC = () => {
               size="large"
               shape="pill"
               text="continue_with"
-              disabled={isSubmitting}
             />
           </div>
 

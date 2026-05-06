@@ -10,6 +10,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from backend.src.core.loader import DataLoader
+from backend.src.api.services.storage import StorageService
 from backend.src.modules.dq.scanner import DataScanner
 from backend.src.modules.dq.cleaner import DataCleaner
 
@@ -20,7 +21,8 @@ def run_dq_pipeline():
     print("="*40)
 
     filename = input("Enter dataset filename (e.g., test.csv): ").strip()
-    loader = DataLoader()
+    storage = StorageService()
+    loader = DataLoader(storage=storage)
     df = loader.load_csv(filename)
 
     if df is None:
@@ -73,9 +75,9 @@ def run_dq_pipeline():
         choice = input(f"Method for '{col}' ({count} outliers) (1-3): ").strip()
         cleaner.handle_outliers(col, choice, outlier_mask)
 
-    save_path = loader.data_dir / f"cleaned_{filename}"
-    cleaner.df.to_csv(save_path)
-    print(f"\n[*] Cleaned dataset saved to '{save_path}'")
+    save_key = storage.join_key("outputs", f"cleaned_{filename}")
+    storage.write_csv(save_key, cleaner.df, include_index=True)
+    print(f"\n[*] Cleaned dataset saved to 's3://{storage.bucket}/{save_key}'")
 
 if __name__ == "__main__":
     run_dq_pipeline()

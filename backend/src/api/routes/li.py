@@ -7,7 +7,8 @@ from backend.src.api.db_models import User
 from backend.src.api.deps import get_current_user
 from backend.src.api.services.datasets import require_dataset_owner, require_dataset_owner_for_filename
 from backend.src.core.loader import DataLoader
-from fastapi.responses import FileResponse
+from backend.src.api.services.storage import StorageService
+from fastapi.responses import StreamingResponse
 from pathlib import Path
 import numpy as np
 
@@ -15,8 +16,7 @@ from backend.src.modules.li.li import LeadingIndicatorsModule
 
 router = APIRouter()
 
-BACKEND_DIR = Path(__file__).resolve().parents[3]
-OUTPUTS_DIR = BACKEND_DIR / "outputs"
+storage = StorageService()
 
 def convert_numpy_types(obj: Any) -> Any:
     if isinstance(obj, dict):
@@ -40,7 +40,7 @@ def run_leading_indicators(
 ):
     try:
         require_dataset_owner(db, current_user.id, request.file_id)
-        loader = DataLoader(data_folder_name="uploads")
+        loader = DataLoader(data_folder_name="uploads", storage=storage)
         
         file_path_clean = f"{request.file_id}_cleaned.csv"
         file_path_raw = f"{request.file_id}_raw.csv"
@@ -100,12 +100,12 @@ def download_output_file(
     if not safe_name.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV downloads are supported")
 
-    file_path = OUTPUTS_DIR / safe_name
-    if not file_path.exists() or not file_path.is_file():
+    key = storage.join_key("outputs", safe_name)
+    if not storage.exists(key):
         raise HTTPException(status_code=404, detail="Requested file was not found")
 
-    return FileResponse(
-        path=file_path,
+    return StreamingResponse(
+        storage.stream_object(key),
         media_type="text/csv",
-        filename=safe_name,
+        headers={"Content-Disposition": f"attachment; filename={safe_name}"},
     )

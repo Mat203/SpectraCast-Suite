@@ -24,7 +24,7 @@ async def upload_file(
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
 
     file_id = str(uuid.uuid4())
-    safe_filename = storage.build_filename(file_id, suffix="raw", ext="csv")
+    safe_filename = storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
     try:
         storage.save_upload(file, safe_filename)
     except Exception as e:
@@ -51,22 +51,17 @@ def delete_file(
 ):
     require_dataset_owner(db, current_user.id, file_id)
 
-    upload_paths = [
-        storage.base_dir / storage.build_filename(file_id, suffix="raw", ext="csv"),
-        storage.base_dir / storage.build_filename(file_id, suffix="cleaned", ext="csv"),
+    upload_keys = [
+        storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads"),
+        storage.build_key(file_id, suffix="cleaned", ext="csv", prefix="uploads"),
     ]
-    for path in upload_paths:
-        if path.exists():
-            path.unlink()
-
-    outputs_dir = storage.base_dir.parent / "outputs"
-    outputs_paths = [
-        outputs_dir / f"raw_trends_{file_id}.csv",
-        outputs_dir / f"correlations_{file_id}.csv",
+    output_keys = [
+        storage.join_key("outputs", f"raw_trends_{file_id}.csv"),
+        storage.join_key("outputs", f"correlations_{file_id}.csv"),
+        storage.join_key("outputs", f"{file_id}_cleaned.csv"),
+        storage.join_key("outputs", f"plot_{file_id}.png"),
     ]
-    for path in outputs_paths:
-        if path.exists():
-            path.unlink()
+    storage.delete_many(upload_keys + output_keys)
 
     db.query(DatasetFileMeta).filter(
         DatasetFileMeta.user_id == current_user.id,

@@ -11,13 +11,15 @@ project_root = os.path.abspath(os.path.join(current_dir, '../../../../'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 from backend.src.core.loader import DataLoader
+from backend.src.api.services.storage import StorageService
 
 class LeadingIndicatorsModule:
     def __init__(self):
         self.generator = QueryGenerator()
         self.fetcher = TrendsFetcher()
         self.analyzer = CorrelationAnalyzer()
-        self.loader = DataLoader()
+        self.storage = StorageService()
+        self.loader = DataLoader(storage=self.storage)
 
     def run(self):
         print("\n" + "="*40)
@@ -54,9 +56,9 @@ class LeadingIndicatorsModule:
             print("Дані Google Trends відсутні.")
             return
 
-        trends_filename = f"raw_trends_{target_col}_{geo}.csv"
-        trends_df.to_csv(trends_filename)
-        print(f"[v] Сирі дані трендів збережено у: {trends_filename}")
+        trends_key = self.storage.join_key("outputs", f"raw_trends_{target_col}_{geo}.csv")
+        self.storage.write_csv(trends_key, trends_df, include_index=True)
+        print(f"[v] Сирі дані трендів збережено у: s3://{self.storage.bucket}/{trends_key}")
 
         results_df = self.analyzer.calculate_lags(primary_df, target_col, trends_df)
         
@@ -65,9 +67,9 @@ class LeadingIndicatorsModule:
         print("="*40)
         print(results_df.head(10).to_string(index=False))
         
-        final_filename = f"correlations_{target_col}_{geo}.csv"
-        results_df.to_csv(final_filename, index=False)
-        print(f"\n[*] Звіт по кореляціям збережено у: {final_filename}")
+        final_key = self.storage.join_key("outputs", f"correlations_{target_col}_{geo}.csv")
+        self.storage.write_csv(final_key, results_df, include_index=False)
+        print(f"\n[*] Звіт по кореляціям збережено у: s3://{self.storage.bucket}/{final_key}")
     
     def run_api(
         self,
@@ -90,18 +92,15 @@ class LeadingIndicatorsModule:
         if trends_df.empty:
             raise ValueError("Дані Google Trends відсутні.")
 
-        outputs_dir = self.loader.data_dir.parent / "outputs"
-        outputs_dir.mkdir(parents=True, exist_ok=True)
-        
-        trends_filename = outputs_dir / f"raw_trends_{file_id}.csv"
-        trends_df.to_csv(trends_filename)
+        trends_key = self.storage.join_key("outputs", f"raw_trends_{file_id}.csv")
+        self.storage.write_csv(trends_key, trends_df, include_index=True)
 
         results_df = self.analyzer.calculate_lags(primary_df, target_col, trends_df)
         
-        final_filename = outputs_dir / f"correlations_{file_id}.csv"
-        results_df.to_csv(final_filename, index=False)
+        final_key = self.storage.join_key("outputs", f"correlations_{file_id}.csv")
+        self.storage.write_csv(final_key, results_df, include_index=False)
 
-        return queries, str(trends_filename), str(final_filename), results_df
+        return queries, trends_key, final_key, results_df
 
 if __name__ == "__main__":
     app = LeadingIndicatorsModule()
