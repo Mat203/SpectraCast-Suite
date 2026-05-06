@@ -187,7 +187,7 @@ export const LeadingIndicatorsView: React.FC = () => {
     } catch (submitError) {
       const message =
         submitError instanceof TypeError
-          ? 'Could not reach API at http://127.0.0.1:8000. Start the backend server and try again.'
+          ? 'Could not reach the API. Check VITE_API_URL and confirm the backend server is reachable.'
           : submitError instanceof Error
             ? submitError.message
             : 'Request failed unexpectedly.';
