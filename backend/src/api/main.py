@@ -45,7 +45,9 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost",
         "http://127.0.0.1",
-        "https://main.d2ngm2jjs20ipn.amplifyapp.com"
+        "https://main.d2ngm2jjs20ipn.amplifyapp.com",
+        "https://spectracast.app",
+        "https://www.spectracast.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
