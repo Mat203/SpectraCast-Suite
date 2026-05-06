@@ -109,7 +109,7 @@ export const LeadingIndicatorsView: React.FC = () => {
     }
   };
 
-  const getByokHeaders = () => {
+  const getByokHeaders = (): Record<string, string> => {
     const enabled = localStorage.getItem('user_llm_byok_enabled') === 'true';
     const apiKey = localStorage.getItem('user_llm_api_key');
     if (enabled && apiKey) {
@@ -158,12 +158,17 @@ export const LeadingIndicatorsView: React.FC = () => {
         throw new Error('Upload succeeded but no file_id was returned by the server.');
       }
 
+      const requestHeaders = new Headers({
+        'Content-Type': 'application/json',
+      });
+
+      Object.entries(getByokHeaders()).forEach(([headerName, headerValue]) => {
+        requestHeaders.set(headerName, headerValue);
+      });
+
       const runResponse = await apiFetch('/api/li/run', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getByokHeaders(),
-        },
+        headers: requestHeaders,
         body: JSON.stringify({
           file_id: uploadData.file_id,
           target_col: targetColumn,

@@ -203,7 +203,6 @@ export const Register: React.FC = () => {
               size="large"
               shape="pill"
               text="continue_with"
-              disabled={isSubmitting}
             />
           </div>
 
