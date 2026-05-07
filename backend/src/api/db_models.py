@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from backend.src.api.db import Base
@@ -13,6 +13,12 @@ class User(Base):
 
     datasets = relationship("Dataset", back_populates="user", cascade="all, delete-orphan")
     dataset_files = relationship("DatasetFileMeta", back_populates="user", cascade="all, delete-orphan")
+    onboarding_state = relationship(
+        "UserOnboardingState",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class Dataset(Base):
@@ -34,3 +40,13 @@ class DatasetFileMeta(Base):
     original_filename = Column(String, nullable=False)
 
     user = relationship("User", back_populates="dataset_files")
+
+
+class UserOnboardingState(Base):
+    __tablename__ = "user_onboarding_state"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    is_onboarded = Column(Boolean, nullable=False, default=False)
+
+    user = relationship("User", back_populates="onboarding_state")

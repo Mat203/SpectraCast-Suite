@@ -8,8 +8,19 @@ class DataScanner:
     def __init__(self, df: pd.DataFrame):
         self.df = df
         self.logger = logging.getLogger(__name__)
+        self._clean_hidden_missing_values()
         if not self._has_datetime_axis():
             self.logger.info("Datetime column not found. Time-based scanning will be skipped.")
+
+    def _clean_hidden_missing_values(self):
+        self.df = self.df.replace(r'(?i)^\s*(nan|none|null|na)?\s*$', np.nan, regex=True)
+
+        for col in self.df.columns:
+            if self.df[col].dtype == 'object' or pd.api.types.is_string_dtype(self.df[col]):
+                try:
+                    self.df[col] = pd.to_numeric(self.df[col])
+                except (ValueError, TypeError):
+                    pass
 
     def _get_datetime_column(self) -> Optional[str]:
         for column in self.df.columns:

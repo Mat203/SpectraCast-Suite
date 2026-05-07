@@ -56,3 +56,13 @@ class FixTimestampsResponse(BaseModel):
     status: str
     inserted_rows: int
     dataset_preview: List[Dict[str, Any]]
+
+
+class UndoRequest(BaseModel):
+    file_id: str
+
+
+class UndoResponse(BaseModel):
+    status: str
+    message: str
+    has_previous_state: bool = False

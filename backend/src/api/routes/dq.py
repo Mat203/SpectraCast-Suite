@@ -13,6 +13,8 @@ from backend.src.api.models.dq import (
     MissingPreviewResponse,
     FixTimestampsRequest,
     FixTimestampsResponse,
+    UndoRequest,
+    UndoResponse,
 )
 from backend.src.api.db import get_db
 from backend.src.api.db_models import User
@@ -29,6 +31,39 @@ import os
 
 router = APIRouter()
 storage = StorageService()
+
+
+def get_dataset_key(file_id: str) -> str:
+    return storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
+
+
+def get_previous_dataset_key(file_id: str) -> str:
+    return storage.build_key(file_id, suffix="previous", ext="csv", prefix="uploads")
+
+
+def cache_previous_dataset(file_id: str) -> None:
+    dataset_key = get_dataset_key(file_id)
+    if not storage.exists(dataset_key):
+        raise HTTPException(status_code=404, detail="File not found or empty")
+
+    storage.put_bytes(
+        get_previous_dataset_key(file_id),
+        storage.read_bytes(dataset_key),
+        content_type="text/csv",
+    )
+
+
+def restore_previous_dataset(file_id: str) -> None:
+    previous_key = get_previous_dataset_key(file_id)
+    if not storage.exists(previous_key):
+        raise HTTPException(status_code=400, detail="No previous state available to undo")
+
+    storage.put_bytes(
+        get_dataset_key(file_id),
+        storage.read_bytes(previous_key),
+        content_type="text/csv",
+    )
+    storage.delete(previous_key)
 
 def convert_numpy_types(obj: Any) -> Any:
     if isinstance(obj, dict):
@@ -71,6 +106,7 @@ def scan_data(
         else:
             preview_df = df.copy().replace({float('nan'): None})
         clean_report["dataset_preview"] = preview_df.to_dict(orient="records")
+        clean_report["has_previous_state"] = storage.exists(get_previous_dataset_key(request.file_id))
         print(f"[SCAN] Scan completed successfully")
         return clean_report
     except HTTPException:
@@ -146,6 +182,8 @@ def handle_outliers(
 
     df[request.column] = df[request.column].astype(float)
     col_data = df[request.column]
+
+    cache_previous_dataset(request.file_id)
 
     Q1 = col_data.quantile(0.25)
     Q3 = col_data.quantile(0.75)
@@ -262,6 +300,8 @@ def handle_missing(
     if request.column not in df.columns:
         raise HTTPException(status_code=400, detail=f"Column '{request.column}' not found")
         
+    cache_previous_dataset(request.file_id)
+
     cleaner = DataCleaner(df)
     cleaner.impute_column(request.column, request.strategy)
 
@@ -296,6 +336,8 @@ def fix_timestamps(
     if frequency == "Unknown":
         raise HTTPException(status_code=400, detail="Frequency could not be inferred")
 
+    cache_previous_dataset(request.file_id)
+
     if isinstance(df.index, pd.DatetimeIndex):
         datetime_index = df.index
         working_df = df.copy()
@@ -323,6 +365,22 @@ def fix_timestamps(
         status="success",
         inserted_rows=inserted_rows,
         dataset_preview=preview_df.to_dict(orient="records"),
+    )
+
+
+@router.post("/undo", response_model=UndoResponse)
+def undo_last_change(
+    request: UndoRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner(db, current_user.id, request.file_id)
+    restore_previous_dataset(request.file_id)
+
+    return UndoResponse(
+        status="success",
+        message="Previous dataset state restored",
+        has_previous_state=False,
     )
 
 @router.post("/preview-missing", response_model=MissingPreviewResponse)

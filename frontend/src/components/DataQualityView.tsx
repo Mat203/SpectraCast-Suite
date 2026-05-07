@@ -68,6 +68,7 @@ interface ScanReport {
   dataset_preview: Array<Record<string, unknown>>;
   time_series_message?: string;
   has_datetime_axis?: boolean;
+  has_previous_state?: boolean;
 }
 
 export const DataQualityView: React.FC = () => {
@@ -83,6 +84,7 @@ export const DataQualityView: React.FC = () => {
   const [report, setReport] = useState<ScanReport | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isFixingTimestamps, setIsFixingTimestamps] = useState(false);
+  const [isUndoing, setIsUndoing] = useState(false);
   const [originalFilename, setOriginalFilename] = useState<string | null>(null);
 
   const [selectedOutlierCol, setSelectedOutlierCol] = useState<string | null>(null);
@@ -107,12 +109,42 @@ export const DataQualityView: React.FC = () => {
   const [fileId, setFileId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const outlierModalRef = useRef<HTMLDivElement>(null);
+  const missingModalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!toastMessage) return;
     const timer = window.setTimeout(() => setToastMessage(null), 6000);
     return () => window.clearTimeout(timer);
   }, [toastMessage]);
+
+  useEffect(() => {
+    if (!isOutlierModalOpen || !outlierModalRef.current) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (outlierModalRef.current && outlierModalRef.current === target) {
+        setIsOutlierModalOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOutlierModalOpen]);
+
+  useEffect(() => {
+    if (!isMissingModalOpen || !missingModalRef.current) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (missingModalRef.current && missingModalRef.current === target) {
+        setIsMissingModalOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMissingModalOpen]);
 
   const previewColumns = useMemo(() => {
     if (!report?.dataset_preview?.length) {
@@ -574,6 +606,44 @@ export const DataQualityView: React.FC = () => {
     }
   };
 
+  const handleUndoLastChange = async () => {
+    if (!fileId || !report?.has_previous_state) {
+      return;
+    }
+
+    setIsUndoing(true);
+    setError(null);
+
+    try {
+      const response = await apiFetch('/api/dq/undo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ file_id: fileId }),
+      });
+
+      if (!response.ok) {
+        let errorBody = 'Unknown error';
+        try {
+          const errorData = (await response.json()) as { detail?: string };
+          errorBody = errorData.detail || `HTTP ${response.status}`;
+        } catch {
+          errorBody = `HTTP ${response.status}`;
+        }
+        throw new Error(`Undo failed: ${errorBody}`);
+      }
+
+      const result = (await response.json()) as { message?: string };
+      setToastMessage(result.message || 'Previous dataset state restored.');
+      await handleScan(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Undo failed');
+    } finally {
+      setIsUndoing(false);
+    }
+  };
+
   const handleDownloadDataset = async () => {
     if (!fileId) {
       return;
@@ -813,12 +883,22 @@ export const DataQualityView: React.FC = () => {
                   <h3 className="text-xl font-bold text-slate-900">Dataset Preview</h3>
                   <p className="mt-1 text-sm text-slate-500">First rows from the uploaded dataset.</p>
                 </div>
-                <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                  <svg className="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 4h10l6 6v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 4v6h6" />
-                  </svg>
-                  <span>{originalFilename || file?.name || fileId || 'Dataset'}</span>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                    <svg className="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 4h10l6 6v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 4v6h6" />
+                    </svg>
+                    <span>{originalFilename || file?.name || fileId || 'Dataset'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleUndoLastChange}
+                    disabled={isUndoing || !report.has_previous_state}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isUndoing ? 'Undoing...' : 'Undo Last Change'}
+                  </button>
                 </div>
               </div>
 
@@ -851,7 +931,7 @@ export const DataQualityView: React.FC = () => {
         )}
 
         {isOutlierModalOpen && selectedOutlierCol && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div ref={outlierModalRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
             <div className="w-full max-w-7xl grid gap-4 lg:grid-cols-[1.1fr_0.95fr_0.9fr]">
               <div className="rounded-2xl bg-white p-7 shadow-2xl">
                 <h3 className="text-lg font-semibold text-slate-900">Preview</h3>
@@ -980,7 +1060,7 @@ export const DataQualityView: React.FC = () => {
         )}
 
         {isMissingModalOpen && selectedMissingCol && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div ref={missingModalRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
             <div className="w-full max-w-7xl grid gap-4 lg:grid-cols-[1.1fr_0.95fr_0.9fr]">
               <div className="rounded-2xl bg-white p-7 shadow-2xl">
                 <h3 className="text-lg font-semibold text-slate-900">Preview</h3>
@@ -1054,7 +1134,7 @@ export const DataQualityView: React.FC = () => {
                     <option value="2">Spline Interpolation</option>
                     <option value="3">Forward Fill</option>
                     <option value="5">Seasonal Mean Fill</option>
-                    <option value="6">KNN Imputer (Auto)</option>
+                    <option value="6">k-NN Imputer (Auto)</option>
                     <option value="7">Do Nothing</option>
                   </select>
                   {!hasDatetimeAxis && ['1', '2', '3'].includes(missingStrategy) && (
