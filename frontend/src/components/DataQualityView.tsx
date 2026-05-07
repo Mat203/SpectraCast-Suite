@@ -107,12 +107,42 @@ export const DataQualityView: React.FC = () => {
   const [fileId, setFileId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const outlierModalRef = useRef<HTMLDivElement>(null);
+  const missingModalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!toastMessage) return;
     const timer = window.setTimeout(() => setToastMessage(null), 6000);
     return () => window.clearTimeout(timer);
   }, [toastMessage]);
+
+  useEffect(() => {
+    if (!isOutlierModalOpen || !outlierModalRef.current) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (outlierModalRef.current && outlierModalRef.current === target) {
+        setIsOutlierModalOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOutlierModalOpen]);
+
+  useEffect(() => {
+    if (!isMissingModalOpen || !missingModalRef.current) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (missingModalRef.current && missingModalRef.current === target) {
+        setIsMissingModalOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMissingModalOpen]);
 
   const previewColumns = useMemo(() => {
     if (!report?.dataset_preview?.length) {
@@ -851,7 +881,7 @@ export const DataQualityView: React.FC = () => {
         )}
 
         {isOutlierModalOpen && selectedOutlierCol && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div ref={outlierModalRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
             <div className="w-full max-w-7xl grid gap-4 lg:grid-cols-[1.1fr_0.95fr_0.9fr]">
               <div className="rounded-2xl bg-white p-7 shadow-2xl">
                 <h3 className="text-lg font-semibold text-slate-900">Preview</h3>
@@ -980,7 +1010,7 @@ export const DataQualityView: React.FC = () => {
         )}
 
         {isMissingModalOpen && selectedMissingCol && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div ref={missingModalRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
             <div className="w-full max-w-7xl grid gap-4 lg:grid-cols-[1.1fr_0.95fr_0.9fr]">
               <div className="rounded-2xl bg-white p-7 shadow-2xl">
                 <h3 className="text-lg font-semibold text-slate-900">Preview</h3>
