@@ -1054,7 +1054,7 @@ export const DataQualityView: React.FC = () => {
                     <option value="2">Spline Interpolation</option>
                     <option value="3">Forward Fill</option>
                     <option value="5">Seasonal Mean Fill</option>
-                    <option value="6">KNN Imputer (Auto)</option>
+                    <option value="6">k-NN Imputer (Auto)</option>
                     <option value="7">Do Nothing</option>
                   </select>
                   {!hasDatetimeAxis && ['1', '2', '3'].includes(missingStrategy) && (
