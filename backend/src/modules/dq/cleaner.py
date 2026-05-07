@@ -8,6 +8,31 @@ class DataCleaner:
     def __init__(self, df: pd.DataFrame):
         self.df = df.copy()
         self.logger = logging.getLogger(__name__)
+        self._column_precisions = {}
+
+    def _get_target_precision(self, column: str) -> int:
+        if column in self._column_precisions:
+            return self._column_precisions[column]
+
+        series = self.df[column].dropna()
+        if not pd.api.types.is_numeric_dtype(series) or series.empty:
+            self._column_precisions[column] = 3
+            return 3
+
+        diff = (series - series.round(5)).abs()
+        
+        if (diff > 1e-6).mean() > 0.05:
+            precision = 7
+        else:
+            precision = 3
+
+        self._column_precisions[column] = precision
+        return precision
+
+    def _apply_precision(self, column: str):
+        precision = self._get_target_precision(column)
+        self.df[column] = self.df[column].round(precision)
+        self.logger.debug("Column '%s' rounded to %s decimal places.", column, precision)
 
     def align_datetime_index(self, frequency: str):
         if not isinstance(self.df.index, pd.DatetimeIndex) or "Unknown" in frequency:
@@ -21,6 +46,8 @@ class DataCleaner:
     def impute_column(self, column: str, method: str):
         if column not in self.df.columns or self.df[column].isna().sum() == 0:
             return
+
+        self._get_target_precision(column)
 
         print(f"[*] Applying method '{method}' to '{column}'...")
 
@@ -44,16 +71,17 @@ class DataCleaner:
             imputed_matrix = imputer.fit_transform(self.df[numeric_cols])
             
             col_idx = numeric_cols.get_loc(column)
-            
             self.df[column] = imputed_matrix[:, col_idx]
         elif method == '7':
             pass
+
+        self._apply_precision(column)
+
     def handle_outliers(self, column: str, method: str, outlier_mask: pd.Series):
-        if method == '3':
+        if method == '3' or not outlier_mask.any():
             return
 
-        if not outlier_mask.any():
-            return
+        self._get_target_precision(column)
 
         updated = int(outlier_mask.sum())
         self.logger.info("Outliers detected in '%s': %s values.", column, updated)
@@ -70,6 +98,8 @@ class DataCleaner:
             self.df[column] = self.df[column].ffill().bfill()
 
         self.logger.info("Outlier handling updated %s values in '%s'.", updated, column)
+        
+        self._apply_precision(column)
 
     def detect_and_handle_outliers(self, column: str, method: str):
         series = self.df[column]
