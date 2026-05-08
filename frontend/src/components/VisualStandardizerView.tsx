@@ -8,6 +8,12 @@ interface GeneratePlotResponse {
   plot_filename: string;
 }
 
+interface RecentDataset {
+  file_id: string;
+  original_filename?: string | null;
+  is_modified?: boolean;
+}
+
 export const VisualStandardizerView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('plot_generator');
   const [styles, setStyles] = useState<string[]>([]);
@@ -25,6 +31,10 @@ export const VisualStandardizerView: React.FC = () => {
   const [plotResult, setPlotResult] = useState<GeneratePlotResponse | null>(null);
   const [plotPreviewUrl, setPlotPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
+  const [recentDatasets, setRecentDatasets] = useState<RecentDataset[]>([]);
+  const [isLoadingRecent, setIsLoadingRecent] = useState(false);
+  const [recentError, setRecentError] = useState<string | null>(null);
 
   const [rawCode, setRawCode] = useState<string>('');
   const [codeStyle, setCodeStyle] = useState<string>('');
@@ -56,6 +66,43 @@ export const VisualStandardizerView: React.FC = () => {
       }
     };
     fetchStyles();
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const fetchRecentDatasets = async () => {
+      setIsLoadingRecent(true);
+      setRecentError(null);
+
+      try {
+        const response = await apiFetch('/api/users/me');
+        if (!response.ok) {
+          throw new Error('Failed to load recent datasets');
+        }
+
+        const data = (await response.json()) as { datasets?: RecentDataset[] };
+        const recent = (data.datasets || []).slice(0, 10);
+
+        if (isActive) {
+          setRecentDatasets(recent);
+        }
+      } catch (err) {
+        if (isActive) {
+          setRecentError(err instanceof Error ? err.message : 'Failed to load recent datasets');
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingRecent(false);
+        }
+      }
+    };
+
+    fetchRecentDatasets();
+
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -147,6 +194,7 @@ export const VisualStandardizerView: React.FC = () => {
       const droppedFile = e.dataTransfer.files[0];
       if (droppedFile.name.endsWith('.csv')) {
         setFile(droppedFile);
+        setSelectedDatasetId(null);
         parseColumnsFromFile(droppedFile);
       } else {
         alert('Please upload a .csv file');
@@ -158,7 +206,35 @@ export const VisualStandardizerView: React.FC = () => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFile = e.target.files[0];
       setFile(selectedFile);
+      setSelectedDatasetId(null);
       parseColumnsFromFile(selectedFile);
+    }
+  };
+
+
+  const handleSelectRecentDataset = async (dataset: RecentDataset) => {
+    setError(null);
+    setPlotResult(null);
+
+    try {
+      const response = await apiFetch(`/api/dq/download/${dataset.file_id}`);
+      if (!response.ok) {
+        throw new Error('Could not load the selected dataset');
+      }
+
+      const blob = await response.blob();
+      const restoredFile = new File(
+        [blob],
+        dataset.original_filename || `${dataset.file_id}.csv`,
+        { type: 'text/csv' },
+      );
+
+      setActiveTab('plot_generator');
+      setFile(restoredFile);
+      setSelectedDatasetId(dataset.file_id);
+      parseColumnsFromFile(restoredFile);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load the selected dataset');
     }
   };
 
@@ -177,17 +253,21 @@ export const VisualStandardizerView: React.FC = () => {
     setPlotResult(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      let fileId = selectedDatasetId;
 
-      const uploadRes = await apiFetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      if (!fileId) {
+        const formData = new FormData();
+        formData.append('file', file);
 
-      if (!uploadRes.ok) throw new Error('File upload failed');
-      const uploadData = await uploadRes.json();
-      const fileId = uploadData.file_id;
+        const uploadRes = await apiFetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!uploadRes.ok) throw new Error('File upload failed');
+        const uploadData = await uploadRes.json();
+        fileId = uploadData.file_id;
+      }
 
       const generateRes = await apiFetch('/api/vs/generate', {
         method: 'POST',
@@ -326,110 +406,171 @@ export const VisualStandardizerView: React.FC = () => {
           </div>
         )}
 
-        {/* Tab Content */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
           {activeTab === 'plot_generator' && (
             <div className="space-y-6">
-              {/* File Upload */}
-              <div
-                className={`w-full border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
-                  isDragging
-                    ? 'border-indigo-500 bg-indigo-50'
-                    : 'border-slate-300 hover:border-indigo-400 bg-slate-50 hover:bg-slate-100'
-                }`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={triggerFileInput}
-              >
-                 <svg className="w-12 h-12 mx-auto text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                <h3 className="text-lg font-medium text-slate-700 mb-1">
-                  {file ? file.name : 'Click or drag file to this area to upload'}
-                </h3>
-                <p className="text-sm text-slate-500">Strictly .csv files only</p>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  className="hidden"
-                  accept=".csv"
-                  onChange={handleFileChange}
-                />
-              </div>
-
-              {/* Form Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">X-Axis</label>
-                    <select
-                      className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                      value={xAxis}
-                      onChange={(e) => setXAxis(e.target.value)}
-                    >
-                      <option value="">Select column...</option>
-                      {columns.map((col) => (
-                        <option key={col} value={col}>{col}</option>
-                      ))}
-                    </select>
-                 </div>
-                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Y-Axis</label>
-                    <select
-                      className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                      value={yAxis}
-                      onChange={(e) => setYAxis(e.target.value)}
-                    >
-                      <option value="">Select column...</option>
-                      {columns.map((col) => (
-                        <option key={col} value={col}>{col}</option>
-                      ))}
-                    </select>
-                 </div>
-                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Plot Type</label>
-                    <select
-                      className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                      value={plotType}
-                      onChange={(e) => setPlotType(e.target.value)}
-                    >
-                      <option value="line">Line</option>
-                      <option value="scatter">Scatter</option>
-                      <option value="bar">Bar</option>
-                      <option value="hist">Histogram</option>
-                    </select>
-                 </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Style</label>
-                    <select
-                      className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                      value={selectedStyle}
-                      onChange={(e) => setSelectedStyle(e.target.value)}
-                    >
-                      {styles.map((style) => (
-                        <option key={style} value={style}>{style}</option>
-                      ))}
-                    </select>
-                 </div>
-                 <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Output Filename</label>
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
+                <div>
+                  <div
+                    className={`w-full border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
+                      isDragging
+                        ? 'border-indigo-500 bg-indigo-50'
+                        : 'border-slate-300 hover:border-indigo-400 bg-slate-50 hover:bg-slate-100'
+                    }`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={triggerFileInput}
+                  >
+                    <svg className="w-12 h-12 mx-auto text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <h3 className="text-lg font-medium text-slate-700 mb-1">
+                      {file ? file.name : 'Click or drag file to this area to upload'}
+                    </h3>
+                    <p className="text-sm text-slate-500">Strictly .csv files only</p>
                     <input
-                      type="text"
-                      className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                      value={outputFilename}
-                      onChange={(e) => setOutputFilename(e.target.value)}
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      accept=".csv"
+                      onChange={handleFileChange}
                     />
-                 </div>
-              </div>
+                  </div>
 
-              <div className="flex justify-end pt-4 border-t border-slate-100">
-                <button
-                  onClick={handleGeneratePlot}
-                  disabled={isLoading}
-                  className="bg-indigo-600 text-white px-6 py-2 rounded-md font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                >
-                  {isLoading ? 'Generating...' : 'Generate Plot'}
-                </button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">X-Axis</label>
+                      <select
+                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        value={xAxis}
+                        onChange={(e) => setXAxis(e.target.value)}
+                      >
+                        <option value="">Select column...</option>
+                        {columns.map((col) => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Y-Axis</label>
+                      <select
+                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        value={yAxis}
+                        onChange={(e) => setYAxis(e.target.value)}
+                      >
+                        <option value="">Select column...</option>
+                        {columns.map((col) => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Plot Type</label>
+                      <select
+                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        value={plotType}
+                        onChange={(e) => setPlotType(e.target.value)}
+                      >
+                        <option value="line">Line</option>
+                        <option value="scatter">Scatter</option>
+                        <option value="bar">Bar</option>
+                        <option value="hist">Histogram</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Style</label>
+                      <select
+                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        value={selectedStyle}
+                        onChange={(e) => setSelectedStyle(e.target.value)}
+                      >
+                        {styles.map((style) => (
+                          <option key={style} value={style}>{style}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Output Filename</label>
+                      <input
+                        type="text"
+                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        value={outputFilename}
+                        onChange={(e) => setOutputFilename(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-4 border-t border-slate-100 mt-6">
+                    <button
+                      onClick={handleGeneratePlot}
+                      disabled={isLoading}
+                      className="bg-indigo-600 text-white px-6 py-2 rounded-md font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                    >
+                      {isLoading ? 'Generating...' : 'Generate Plot'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+                  <h3 className="text-lg font-semibold text-slate-800">Recent Datasets</h3>
+
+                  {isLoadingRecent && (
+                    <div className="mt-4 space-y-2">
+                      {[...Array(3)].map((_, i) => (
+                        <div key={i} className="h-16 rounded-lg bg-slate-100 animate-pulse" />
+                      ))}
+                    </div>
+                  )}
+
+                  {!isLoadingRecent && recentError && (
+                    <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{recentError}</p>
+                  )}
+
+                  {!isLoadingRecent && recentDatasets.length === 0 && !recentError && (
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-6 text-center">
+                      <svg className="mx-auto h-8 w-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="mt-2 text-sm font-medium text-slate-600">No recent datasets</p>
+                      <p className="mt-1 text-xs text-slate-500">Upload a file to get started</p>
+                    </div>
+                  )}
+
+                  {!isLoadingRecent && recentDatasets.length > 0 && (
+                    <div className="mt-4 flex-1 max-h-102 space-y-2 overflow-y-auto pr-1">
+                      {recentDatasets.map((dataset) => (
+                        <button
+                          key={dataset.file_id}
+                          type="button"
+                          onClick={() => handleSelectRecentDataset(dataset)}
+                          disabled={isLoading}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-left transition-all hover:border-indigo-300 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <svg className="h-4 w-4 flex-shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 4h10l6 6v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 4v6h6" />
+                                </svg>
+                                <p className="truncate text-sm font-medium text-slate-800">
+                                  {dataset.original_filename || dataset.file_id}
+                                </p>
+                              </div>
+                            </div>
+
+                            {dataset.is_modified && (
+                              <span className="flex-shrink-0 whitespace-nowrap rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                                Modified
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {plotResult && (

@@ -875,7 +875,7 @@ export const DataQualityView: React.FC = () => {
               )}
             </div>
 
-            <div className="flex flex-col">
+            <div className="flex flex-col rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
               <h3 className="text-lg font-semibold text-slate-800">Recent Datasets</h3>
 
               {isLoadingRecent && (
@@ -893,7 +893,7 @@ export const DataQualityView: React.FC = () => {
               )}
 
               {!isLoadingRecent && recentDatasets.length === 0 && !recentError && (
-                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-center">
+                <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-6 text-center">
                   <svg className="mx-auto h-8 w-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
@@ -903,7 +903,7 @@ export const DataQualityView: React.FC = () => {
               )}
 
               {!isLoadingRecent && recentDatasets.length > 0 && (
-                <div className="mt-4 flex-1 space-y-2 overflow-y-auto max-h-42">
+                <div className="mt-4 flex-1 max-h-42 space-y-2 overflow-y-auto pr-1">
                   {recentDatasets.map((dataset) => (
                     <button
                       key={dataset.file_id}
