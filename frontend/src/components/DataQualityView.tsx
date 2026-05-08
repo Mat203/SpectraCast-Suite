@@ -69,6 +69,7 @@ interface ScanReport {
   time_series_message?: string;
   has_datetime_axis?: boolean;
   has_previous_state?: boolean;
+  is_modified?: boolean;
 }
 
 export const DataQualityView: React.FC = () => {
@@ -85,6 +86,7 @@ export const DataQualityView: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isFixingTimestamps, setIsFixingTimestamps] = useState(false);
   const [isUndoing, setIsUndoing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [originalFilename, setOriginalFilename] = useState<string | null>(null);
 
   const [selectedOutlierCol, setSelectedOutlierCol] = useState<string | null>(null);
@@ -644,6 +646,44 @@ export const DataQualityView: React.FC = () => {
     }
   };
 
+  const handleSaveModified = async () => {
+    if (!fileId) {
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const response = await apiFetch('/api/dq/save-modified', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ file_id: fileId }),
+      });
+
+      if (!response.ok) {
+        let errorBody = 'Unknown error';
+        try {
+          const errorData = (await response.json()) as { detail?: string };
+          errorBody = errorData.detail || `HTTP ${response.status}`;
+        } catch {
+          errorBody = `HTTP ${response.status}`;
+        }
+        throw new Error(`Save failed: ${errorBody}`);
+      }
+
+      const result = (await response.json()) as { message?: string };
+      setToastMessage(result.message || 'Dataset saved successfully.');
+      await handleScan(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleDownloadDataset = async () => {
     if (!fileId) {
       return;
@@ -890,14 +930,28 @@ export const DataQualityView: React.FC = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 4v6h6" />
                     </svg>
                     <span>{originalFilename || file?.name || fileId || 'Dataset'}</span>
+                    {report?.is_modified && (
+                      <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                        Modified
+                      </span>
+                    )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveModified}
+                    disabled={isSaving || report?.is_modified}
+                    title={report?.is_modified ? 'Dataset already saved' : 'Save the current version permanently'}
+                    className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSaving ? 'Saving...' : 'Save Changes'}
+                  </button>
                   <button
                     type="button"
                     onClick={handleUndoLastChange}
                     disabled={isUndoing || !report.has_previous_state}
                     className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isUndoing ? 'Undoing...' : 'Undo Last Change'}
+                    {isUndoing ? 'Undoing...' : 'Undo'}
                   </button>
                 </div>
               </div>

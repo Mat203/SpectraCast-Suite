@@ -15,9 +15,11 @@ from backend.src.api.models.dq import (
     FixTimestampsResponse,
     UndoRequest,
     UndoResponse,
+    SaveModifiedRequest,
+    SaveModifiedResponse,
 )
 from backend.src.api.db import get_db
-from backend.src.api.db_models import User
+from backend.src.api.db_models import User, Dataset
 from backend.src.api.deps import get_current_user
 from backend.src.api.services.datasets import require_dataset_owner
 from backend.src.api.services.storage import StorageService
@@ -107,6 +109,10 @@ def scan_data(
             preview_df = df.copy().replace({float('nan'): None})
         clean_report["dataset_preview"] = preview_df.to_dict(orient="records")
         clean_report["has_previous_state"] = storage.exists(get_previous_dataset_key(request.file_id))
+        
+        dataset = db.query(Dataset).filter(Dataset.file_uuid == request.file_id).first()
+        clean_report["is_modified"] = dataset.is_modified if dataset else False
+        
         print(f"[SCAN] Scan completed successfully")
         return clean_report
     except HTTPException:
@@ -381,6 +387,31 @@ def undo_last_change(
         status="success",
         message="Previous dataset state restored",
         has_previous_state=False,
+    )
+
+@router.post("/save-modified", response_model=SaveModifiedResponse)
+def save_modified_dataset(
+    request: SaveModifiedRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner(db, current_user.id, request.file_id)
+    
+    dataset = db.query(Dataset).filter(Dataset.file_uuid == request.file_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    
+    dataset.is_modified = True
+    db.commit()
+    
+    previous_key = get_previous_dataset_key(request.file_id)
+    if storage.exists(previous_key):
+        storage.delete(previous_key)
+    
+    return SaveModifiedResponse(
+        status="success",
+        message="Dataset saved successfully",
+        is_modified=True,
     )
 
 @router.post("/preview-missing", response_model=MissingPreviewResponse)

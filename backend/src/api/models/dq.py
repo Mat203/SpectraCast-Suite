@@ -66,3 +66,13 @@ class UndoResponse(BaseModel):
     status: str
     message: str
     has_previous_state: bool = False
+
+
+class SaveModifiedRequest(BaseModel):
+    file_id: str
+
+
+class SaveModifiedResponse(BaseModel):
+    status: str
+    message: str
+    is_modified: bool
