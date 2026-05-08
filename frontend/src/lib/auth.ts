@@ -11,3 +11,7 @@ export const clearToken = () => {
 };
 
 export const isAuthenticated = () => Boolean(getToken());
+
+export const logout = () => {
+  clearToken();
+};

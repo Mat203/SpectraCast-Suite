@@ -1,5 +1,6 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useUser } from '../lib/userContext';
 
 export type ModuleKey = 'dq' | 'li' | 'vs';
 
@@ -11,6 +12,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onModuleChange }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, logout } = useUser();
   const isProfileRoute = location.pathname.startsWith('/profile');
 
   const navItemClass = (isActive: boolean) =>
@@ -23,6 +25,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onModuleChange }
   const handleModuleClick = (module: ModuleKey) => {
     onModuleChange(module);
     navigate('/app');
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login', { replace: true });
   };
 
   return (
@@ -56,15 +63,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onModuleChange }
           Leading Indicators
         </button>
 
+      </nav>
+    
+      <div className="px-4 py-4 border-t border-slate-800 space-y-3">
+        <div className="text-xs text-slate-400">
+          <p>Signed in as</p>
+          <p className="font-medium text-slate-200 truncate">{user?.email}</p>
+        </div>
         <button
           type="button"
-          className={navItemClass(isProfileRoute)}
           onClick={() => navigate('/profile')}
+          className="w-full px-3 py-2 rounded-md font-medium transition-colors text-left text-sm text-slate-300 hover:bg-slate-800 hover:text-white bg-slate-800/40"
         >
           Profile
         </button>
-      </nav>
-
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="w-full px-3 py-2 rounded-md font-medium transition-colors text-left text-sm text-slate-300 hover:bg-slate-800 hover:text-white bg-slate-800/40"
+        >
+          Sign Out
+        </button>
+      </div>
       <div className="p-4 border-t border-slate-800 text-sm text-slate-500">
         &copy; SpectraCast Suite
       </div>
