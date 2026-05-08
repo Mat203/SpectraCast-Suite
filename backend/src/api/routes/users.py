@@ -14,6 +14,7 @@ router = APIRouter()
 class DatasetInfo(BaseModel):
     file_id: str
     original_filename: Optional[str] = None
+    is_modified: Optional[bool] = False
 
 
 class UserProfileResponse(BaseModel):
@@ -34,14 +35,14 @@ def get_profile(
     db: Session = Depends(get_db),
 ):
     dataset_rows = (
-        db.query(Dataset.file_uuid, DatasetFileMeta.original_filename)
+        db.query(Dataset.file_uuid, DatasetFileMeta.original_filename, Dataset.is_modified)
         .outerjoin(DatasetFileMeta, Dataset.file_uuid == DatasetFileMeta.file_uuid)
         .filter(Dataset.user_id == current_user.id)
         .order_by(Dataset.id.desc())
         .all()
     )
     datasets = [
-        DatasetInfo(file_id=row[0], original_filename=row[1])
+        DatasetInfo(file_id=row[0], original_filename=row[1], is_modified=row[2])
         for row in dataset_rows
     ]
     onboarding_state = (
