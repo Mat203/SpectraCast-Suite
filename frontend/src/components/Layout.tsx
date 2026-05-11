@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sidebar, type ModuleKey } from './Sidebar';
 import { HelpPrivacyButton } from './HelpPrivacyButton';
 import { HelpPrivacyModal } from './HelpPrivacyModal';
+import { CookieConsentBanner } from './CookieConsentBanner';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -25,6 +26,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeModule, onModule
         isOpen={isHelpModalOpen}
         onClose={() => setIsHelpModalOpen(false)}
       />
+      
+      {/* Cookie Consent Banner */}
+      <CookieConsentBanner />
     </div>
   );
 };
