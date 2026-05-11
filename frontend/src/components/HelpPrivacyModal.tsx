@@ -45,16 +45,19 @@ export const HelpPrivacyModal: React.FC<HelpPrivacyModalProps> = ({ isOpen, onCl
 
           <div className="px-6 py-6 space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Feedback</h3>
-              <p className="text-slate-700 mb-3">
+              <h3 className="text-lg font-semibold text-slate-900 mb-3">Feedback</h3>
+              <p className="text-slate-700 mb-3 text-sm">
                 We'd love to hear your thoughts and suggestions! Your feedback helps us improve SpectraCast Suite.
               </p>
-              <a
-                href="mailto:mtalalaievskyi@kse.org.ua"
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
-              >
-                Send Feedback
-              </a>
+              <div className="flex flex-col gap-2">
+                <a
+                  href="mailto:mtalalaievskyi@kse.org.ua"
+                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium w-fit"
+                >
+                  Send Feedback
+                </a>
+                <p className="text-sm text-slate-600">Email: <span className="font-medium text-slate-900">mtalalaievskyi@kse.org.ua</span></p>
+              </div>
             </div>
 
             <div>
