@@ -6,6 +6,7 @@ import type { LlmProvider } from '../lib/llmModels';
 interface DatasetInfo {
   file_id: string;
   original_filename?: string | null;
+  is_modified?: boolean;
 }
 
 interface ProfileResponse {
@@ -382,6 +383,11 @@ export const Profile: React.FC = () => {
                     <span className="text-sm font-semibold text-slate-800">
                       {dataset.original_filename || dataset.file_id}
                     </span>
+                    {dataset.is_modified && (
+                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                        Modified
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <button

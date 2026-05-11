@@ -1,9 +1,16 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, downloadFile } from '../lib/api';
 
 interface UploadResponse {
   status: string;
   file_id: string;
+}
+
+interface RecentDataset {
+  file_id: string;
+  original_filename?: string | null;
+  is_modified?: boolean;
+  created_at?: string | null;
 }
 
 interface LeadingIndicatorsResponse {
@@ -18,6 +25,10 @@ export const LeadingIndicatorsView: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [columns, setColumns] = useState<string[]>([]);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
+  const [recentDatasets, setRecentDatasets] = useState<RecentDataset[]>([]);
+  const [isLoadingRecent, setIsLoadingRecent] = useState(false);
+  const [recentError, setRecentError] = useState<string | null>(null);
 
   const [targetColumn, setTargetColumn] = useState('');
   const [region, setRegion] = useState('');
@@ -29,6 +40,43 @@ export const LeadingIndicatorsView: React.FC = () => {
   const [result, setResult] = useState<LeadingIndicatorsResponse | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const fetchRecentDatasets = async () => {
+      setIsLoadingRecent(true);
+      setRecentError(null);
+
+      try {
+        const response = await apiFetch('/api/users/me');
+        if (!response.ok) {
+          throw new Error('Failed to load recent datasets');
+        }
+
+        const data = (await response.json()) as { datasets?: RecentDataset[] };
+        const recent = (data.datasets || []).slice(0, 10);
+
+        if (isActive) {
+          setRecentDatasets(recent);
+        }
+      } catch (err) {
+        if (isActive) {
+          setRecentError(err instanceof Error ? err.message : 'Failed to load recent datasets');
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingRecent(false);
+        }
+      }
+    };
+
+    fetchRecentDatasets();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const topResultsHeaders = useMemo(() => {
     if (!result?.top_results?.length) {
@@ -75,6 +123,7 @@ export const LeadingIndicatorsView: React.FC = () => {
     setError(null);
     setResult(null);
     setFile(nextFile);
+    setSelectedDatasetId(null);
     parseColumnsFromFile(nextFile);
   };
 
@@ -97,6 +146,32 @@ export const LeadingIndicatorsView: React.FC = () => {
 
   const handleBrowseClick = () => {
     fileInputRef.current?.click();
+  };
+
+
+  const handleSelectRecentDataset = async (dataset: RecentDataset) => {
+    setError(null);
+    setResult(null);
+
+    try {
+      const response = await apiFetch(`/api/dq/download/${dataset.file_id}`);
+      if (!response.ok) {
+        throw new Error('Could not load the selected dataset');
+      }
+
+      const blob = await response.blob();
+      const restoredFile = new File(
+        [blob],
+        dataset.original_filename || `${dataset.file_id}.csv`,
+        { type: 'text/csv' },
+      );
+
+      setFile(restoredFile);
+      setSelectedDatasetId(dataset.file_id);
+      parseColumnsFromFile(restoredFile);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load the selected dataset');
+    }
   };
 
   const extractApiError = async (response: Response, fallbackPrefix: string) => {
@@ -140,22 +215,28 @@ export const LeadingIndicatorsView: React.FC = () => {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      let fileIdToUse = selectedDatasetId;
 
-      const uploadResponse = await apiFetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      if (!fileIdToUse) {
+        const formData = new FormData();
+        formData.append('file', file);
 
-      if (!uploadResponse.ok) {
-        throw new Error(await extractApiError(uploadResponse, 'Upload failed'));
-      }
+        const uploadResponse = await apiFetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
 
-      const uploadData = (await uploadResponse.json()) as UploadResponse;
+        if (!uploadResponse.ok) {
+          throw new Error(await extractApiError(uploadResponse, 'Upload failed'));
+        }
 
-      if (!uploadData.file_id) {
-        throw new Error('Upload succeeded but no file_id was returned by the server.');
+        const uploadData = (await uploadResponse.json()) as UploadResponse;
+
+        if (!uploadData.file_id) {
+          throw new Error('Upload succeeded but no file_id was returned by the server.');
+        }
+
+        fileIdToUse = uploadData.file_id;
       }
 
       const requestHeaders = new Headers({
@@ -170,7 +251,7 @@ export const LeadingIndicatorsView: React.FC = () => {
         method: 'POST',
         headers: requestHeaders,
         body: JSON.stringify({
-          file_id: uploadData.file_id,
+          file_id: fileIdToUse,
           target_col: targetColumn,
           region: region.trim(),
           geo: geoCode.trim() || 'UA',
@@ -227,35 +308,125 @@ export const LeadingIndicatorsView: React.FC = () => {
         {!result ? (
           <section className="rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
             <form onSubmit={handleSubmit} className="space-y-6">
-              <div
-                className={`w-full rounded-xl border-2 border-dashed p-8 md:p-10 text-center transition-colors ${isDragging ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400 bg-white'}`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={handleBrowseClick}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    handleBrowseClick();
-                  }
-                }}
-              >
-                <svg className="mx-auto mb-4 h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
+                <div>
+                  <div
+                    className={`w-full rounded-xl border-2 border-dashed p-8 md:p-10 text-center transition-colors ${isDragging ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400 bg-white'}`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={handleBrowseClick}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleBrowseClick();
+                      }
+                    }}
+                  >
+                    <svg className="mx-auto mb-4 h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
 
-                <p className="text-lg font-semibold text-slate-800">{file ? file.name : 'Click or drag a CSV file here'}</p>
-                <p className="mt-1 text-sm text-slate-500">{file ? `${(file.size / 1024).toFixed(1)} KB selected` : 'Only .csv files are accepted'}</p>
+                    <p className="text-lg font-semibold text-slate-800">{file ? file.name : 'Click or drag a CSV file here'}</p>
+                    <p className="mt-1 text-sm text-slate-500">{file ? `${(file.size / 1024).toFixed(1)} KB selected` : 'Only .csv files are accepted'}</p>
 
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  accept=".csv"
-                  onChange={(event) => handleFileSelect(event.target.files?.[0] ?? null)}
-                />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      accept=".csv"
+                      onChange={(event) => handleFileSelect(event.target.files?.[0] ?? null)}
+                    />
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap items-center gap-4">
+                    <button
+                      type="submit"
+                      disabled={!file || !columns.length || isLoading}
+                      className={`inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors ${!file || !columns.length || isLoading ? 'bg-slate-300 text-slate-600 cursor-not-allowed' : 'bg-sky-600 text-white hover:bg-sky-700'}`}
+                    >
+                      {isLoading ? (
+                        <>
+                          <svg className="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                            <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" className="opacity-90" />
+                          </svg>
+                          Generating queries and fetching trends...
+                        </>
+                      ) : (
+                        'Run Leading Indicators Analysis'
+                      )}
+                    </button>
+
+                    {file && <span className="text-sm text-slate-500">Ready with {file.name}</span>}
+                  </div>
+
+                  {error && (
+                    <p className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
+                  )}
+                </div>
+
+                <div className="flex flex-col rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+                  <h3 className="text-lg font-semibold text-slate-800">Recent Datasets</h3>
+
+                  {isLoadingRecent && (
+                    <div className="mt-4 space-y-2">
+                      {[...Array(3)].map((_, i) => (
+                        <div key={i} className="h-16 rounded-lg bg-slate-100 animate-pulse" />
+                      ))}
+                    </div>
+                  )}
+
+                  {!isLoadingRecent && recentError && (
+                    <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{recentError}</p>
+                  )}
+
+                  {!isLoadingRecent && recentDatasets.length === 0 && !recentError && (
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-6 text-center">
+                      <svg className="mx-auto h-8 w-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="mt-2 text-sm font-medium text-slate-600">No recent datasets</p>
+                      <p className="mt-1 text-xs text-slate-500">Upload a file to get started</p>
+                    </div>
+                  )}
+
+                  {!isLoadingRecent && recentDatasets.length > 0 && (
+                    <div className="mt-4 flex-1 max-h-42 space-y-2 overflow-y-auto pr-1">
+                      {recentDatasets.map((dataset) => (
+                        <button
+                          key={dataset.file_id}
+                          type="button"
+                          onClick={() => handleSelectRecentDataset(dataset)}
+                          disabled={isLoading}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-left transition-all hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <svg className="h-4 w-4 flex-shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 4h10l6 6v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 4v6h6" />
+                                </svg>
+                                <p className="truncate text-sm font-medium text-slate-800">
+                                  {dataset.original_filename || dataset.file_id}
+                                </p>
+                              </div>
+                            </div>
+
+                            {dataset.is_modified && (
+                              <span className="flex-shrink-0 whitespace-nowrap rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                                Modified
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {file && (
@@ -316,32 +487,6 @@ export const LeadingIndicatorsView: React.FC = () => {
                     />
                   </label>
                 </div>
-              )}
-
-              <div className="flex flex-wrap items-center gap-4">
-                <button
-                  type="submit"
-                  disabled={!file || !columns.length || isLoading}
-                  className={`inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors ${!file || !columns.length || isLoading ? 'bg-slate-300 text-slate-600 cursor-not-allowed' : 'bg-sky-600 text-white hover:bg-sky-700'}`}
-                >
-                  {isLoading ? (
-                    <>
-                      <svg className="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
-                        <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" className="opacity-90" />
-                      </svg>
-                      Generating queries and fetching trends...
-                    </>
-                  ) : (
-                    'Run Leading Indicators Analysis'
-                  )}
-                </button>
-
-                {file && <span className="text-sm text-slate-500">Ready with {file.name}</span>}
-              </div>
-
-              {error && (
-                <p className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
               )}
             </form>
           </section>

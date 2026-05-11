@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { apiFetch } from './api'
-import { isAuthenticated } from './auth'
+import { isAuthenticated, logout as logoutAuth } from './auth'
 
 interface UserState {
   email: string
@@ -13,6 +13,7 @@ interface UserContextValue {
   isLoading: boolean
   setUser: Dispatch<SetStateAction<UserState | null>>
   refreshUser: () => Promise<void>
+  logout: () => void
 }
 
 const UserContext = createContext<UserContextValue | undefined>(undefined)
@@ -67,6 +68,10 @@ export const UserProvider = ({ children }: UserProviderProps) => {
       isLoading,
       setUser,
       refreshUser,
+      logout: () => {
+        logoutAuth()
+        setUser(null)
+      },
     }),
     [user, isLoading, refreshUser],
   )
