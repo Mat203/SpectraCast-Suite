@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { apiFetch, downloadFile } from '../lib/api';
+import { useAppStore } from '../store/useAppStore';
+import type { AppStoreState } from '../store/useAppStore';
 
 interface UploadResponse {
   status: string;
@@ -22,22 +24,42 @@ interface LeadingIndicatorsResponse {
 }
 
 export const LeadingIndicatorsView: React.FC = () => {
-  const [file, setFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [columns, setColumns] = useState<string[]>([]);
-  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
-  const [recentDatasets, setRecentDatasets] = useState<RecentDataset[]>([]);
-  const [isLoadingRecent, setIsLoadingRecent] = useState(false);
-  const [recentError, setRecentError] = useState<string | null>(null);
+  const activeDataset = useAppStore((state: AppStoreState) => state.activeDataset) as AppStoreState['activeDataset'];
+  const setActiveDataset = useAppStore((state: AppStoreState) => state.setActiveDataset) as AppStoreState['setActiveDataset'];
+  const setDatasetColumns = useAppStore((state: AppStoreState) => state.setDatasetColumns) as AppStoreState['setDatasetColumns'];
+  const leadingIndicators = useAppStore((state: AppStoreState) => state.leadingIndicators) as AppStoreState['leadingIndicators'];
+  const setLeadingIndicators = useAppStore((state: AppStoreState) => state.setLeadingIndicators) as AppStoreState['setLeadingIndicators'];
+  const leadingIndicatorsUi = useAppStore((state: AppStoreState) => state.leadingIndicatorsUi) as AppStoreState['leadingIndicatorsUi'];
+  const setLeadingIndicatorsUi = useAppStore((state: AppStoreState) => state.setLeadingIndicatorsUi) as AppStoreState['setLeadingIndicatorsUi'];
 
-  const [targetColumn, setTargetColumn] = useState('');
-  const [region, setRegion] = useState('');
-  const [geoCode, setGeoCode] = useState('UA');
-  const [extraContext, setExtraContext] = useState('');
+  const { file, fileId, columns } = activeDataset;
+  const { targetColumn, region, geoCode, extraContext } = leadingIndicators;
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<LeadingIndicatorsResponse | null>(null);
+  const setTargetColumn = (value: string) => setLeadingIndicators({ targetColumn: value });
+  const setRegion = (value: string) => setLeadingIndicators({ region: value });
+  const setGeoCode = (value: string) => setLeadingIndicators({ geoCode: value });
+  const setExtraContext = (value: string) => setLeadingIndicators({ extraContext: value });
+
+  const {
+    isDragging,
+    isLoading,
+    error,
+    result: resultState,
+    recentDatasets: recentDatasetsState,
+    isLoadingRecent,
+    recentError,
+  } = leadingIndicatorsUi;
+
+  const result = resultState as LeadingIndicatorsResponse | null;
+  const recentDatasets = recentDatasetsState as RecentDataset[];
+
+  const setIsDragging = (value: boolean) => setLeadingIndicatorsUi({ isDragging: value });
+  const setIsLoading = (value: boolean) => setLeadingIndicatorsUi({ isLoading: value });
+  const setError = (value: string | null) => setLeadingIndicatorsUi({ error: value });
+  const setResult = (value: LeadingIndicatorsResponse | null) => setLeadingIndicatorsUi({ result: value });
+  const setRecentDatasets = (value: RecentDataset[]) => setLeadingIndicatorsUi({ recentDatasets: value });
+  const setIsLoadingRecent = (value: boolean) => setLeadingIndicatorsUi({ isLoadingRecent: value });
+  const setRecentError = (value: string | null) => setLeadingIndicatorsUi({ recentError: value });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -78,6 +100,16 @@ export const LeadingIndicatorsView: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!columns.length) {
+      return;
+    }
+
+    if (!targetColumn || !columns.includes(targetColumn)) {
+      setLeadingIndicators({ targetColumn: columns[0] ?? '' });
+    }
+  }, [columns, targetColumn, setLeadingIndicators]);
+
   const topResultsHeaders = useMemo(() => {
     if (!result?.top_results?.length) {
       return [];
@@ -97,13 +129,13 @@ export const LeadingIndicatorsView: React.FC = () => {
         .map((header) => header.trim().replace(/^"|"$/g, ''))
         .filter(Boolean);
 
-      setColumns(parsedHeaders);
+      setDatasetColumns(parsedHeaders);
       setTargetColumn(parsedHeaders[0] ?? '');
     };
 
     reader.onerror = () => {
       setError('Could not read CSV headers. Try another file.');
-      setColumns([]);
+      setDatasetColumns([]);
       setTargetColumn('');
     };
 
@@ -122,8 +154,12 @@ export const LeadingIndicatorsView: React.FC = () => {
 
     setError(null);
     setResult(null);
-    setFile(nextFile);
-    setSelectedDatasetId(null);
+    setActiveDataset({
+      file: nextFile,
+      fileId: null,
+      originalFilename: nextFile.name,
+      columns: [],
+    });
     parseColumnsFromFile(nextFile);
   };
 
@@ -166,8 +202,12 @@ export const LeadingIndicatorsView: React.FC = () => {
         { type: 'text/csv' },
       );
 
-      setFile(restoredFile);
-      setSelectedDatasetId(dataset.file_id);
+      setActiveDataset({
+        file: restoredFile,
+        fileId: dataset.file_id,
+        originalFilename: dataset.original_filename || restoredFile.name,
+        columns: [],
+      });
       parseColumnsFromFile(restoredFile);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load the selected dataset');
@@ -215,7 +255,7 @@ export const LeadingIndicatorsView: React.FC = () => {
     setError(null);
 
     try {
-      let fileIdToUse = selectedDatasetId;
+      let fileIdToUse = fileId;
 
       if (!fileIdToUse) {
         const formData = new FormData();
@@ -237,6 +277,10 @@ export const LeadingIndicatorsView: React.FC = () => {
         }
 
         fileIdToUse = uploadData.file_id;
+        setActiveDataset({
+          fileId: fileIdToUse,
+          originalFilename: file?.name || null,
+        });
       }
 
       const requestHeaders = new Headers({

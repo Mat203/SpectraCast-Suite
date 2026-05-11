@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { apiFetch, downloadFile } from '../lib/api';
 import { STRATEGY_DESCRIPTIONS } from '../lib/outlierStrategies';
 import type { OutlierStrategyKey } from '../lib/outlierStrategies';
 import { MISSING_VALUES_DESCRIPTIONS } from '../lib/missingValueStrategies';
 import type { MissingStrategyKey } from '../lib/missingValueStrategies';
+import { useAppStore } from '../store/useAppStore';
+import type { AppStoreState } from '../store/useAppStore';
 
 interface UploadResponse {
   status: string;
@@ -84,41 +86,83 @@ export const DataQualityView: React.FC = () => {
       {message}
     </div>
   );
-  const [file, setFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<ScanReport | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [isFixingTimestamps, setIsFixingTimestamps] = useState(false);
-  const [isUndoing, setIsUndoing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [originalFilename, setOriginalFilename] = useState<string | null>(null);
+  const activeDataset = useAppStore((state: AppStoreState) => state.activeDataset) as AppStoreState['activeDataset'];
+  const setActiveDataset = useAppStore((state: AppStoreState) => state.setActiveDataset) as AppStoreState['setActiveDataset'];
+  const setDatasetColumns = useAppStore((state: AppStoreState) => state.setDatasetColumns) as AppStoreState['setDatasetColumns'];
+  const dataQuality = useAppStore((state: AppStoreState) => state.dataQuality) as AppStoreState['dataQuality'];
+  const setDataQuality = useAppStore((state: AppStoreState) => state.setDataQuality) as AppStoreState['setDataQuality'];
+  const dataQualityUi = useAppStore((state: AppStoreState) => state.dataQualityUi) as AppStoreState['dataQualityUi'];
+  const setDataQualityUi = useAppStore((state: AppStoreState) => state.setDataQualityUi) as AppStoreState['setDataQualityUi'];
 
-  const [selectedOutlierCol, setSelectedOutlierCol] = useState<string | null>(null);
-  const [isOutlierModalOpen, setIsOutlierModalOpen] = useState(false);
-  const [outlierStrategy, setOutlierStrategy] = useState<OutlierStrategyKey>('clip_iqr');
-  const [strategyPreview, setStrategyPreview] = useState<OutlierStrategyKey>('clip_iqr');
-  const [isStrategyPanelVisible, setIsStrategyPanelVisible] = useState(false);
-  const [isProcessingAction, setIsProcessingAction] = useState(false);
-  const [previewData, setPreviewData] = useState<OutlierPreviewResponse | null>(null);
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const { file, fileId, originalFilename } = activeDataset;
+  const {
+    selectedOutlierCol,
+    outlierStrategy,
+    strategyPreview,
+    isStrategyPanelVisible,
+    selectedMissingCol,
+    missingStrategy,
+    missingStrategyPreview,
+    isMissingPanelVisible,
+  } = dataQuality;
 
-  const [selectedMissingCol, setSelectedMissingCol] = useState<string | null>(null);
-  const [isMissingModalOpen, setIsMissingModalOpen] = useState(false);
-  const [missingStrategy, setMissingStrategy] = useState<MissingStrategyKey>('3'); // Default: Forward Fill
-  const [missingStrategyPreview, setMissingStrategyPreview] = useState<MissingStrategyKey>('3');
-  const [isMissingPanelVisible, setIsMissingPanelVisible] = useState(false);
-  const [missingPreviewData, setMissingPreviewData] = useState<MissingPreviewResponse | null>(null);
-  const [isMissingPreviewLoading, setIsMissingPreviewLoading] = useState(false);
-  const [missingPreviewError, setMissingPreviewError] = useState<string | null>(null);
+  const setSelectedOutlierCol = (value: string | null) => setDataQuality({ selectedOutlierCol: value });
+  const setOutlierStrategy = (value: OutlierStrategyKey) => setDataQuality({ outlierStrategy: value });
+  const setStrategyPreview = (value: OutlierStrategyKey) => setDataQuality({ strategyPreview: value });
+  const setIsStrategyPanelVisible = (value: boolean) => setDataQuality({ isStrategyPanelVisible: value });
+  const setSelectedMissingCol = (value: string | null) => setDataQuality({ selectedMissingCol: value });
+  const setMissingStrategy = (value: MissingStrategyKey) => setDataQuality({ missingStrategy: value });
+  const setMissingStrategyPreview = (value: MissingStrategyKey) => setDataQuality({ missingStrategyPreview: value });
+  const setIsMissingPanelVisible = (value: boolean) => setDataQuality({ isMissingPanelVisible: value });
 
-  const [fileId, setFileId] = useState<string | null>(null);
+  const {
+    isDragging,
+    isLoading,
+    error,
+    report: reportState,
+    toastMessage,
+    isFixingTimestamps,
+    isUndoing,
+    isSaving,
+    isOutlierModalOpen,
+    isProcessingAction,
+    previewData: previewDataState,
+    isPreviewLoading,
+    previewError,
+    isMissingModalOpen,
+    missingPreviewData: missingPreviewDataState,
+    isMissingPreviewLoading,
+    missingPreviewError,
+    recentDatasets: recentDatasetsState,
+    isLoadingRecent,
+    recentError,
+  } = dataQualityUi;
 
-  const [recentDatasets, setRecentDatasets] = useState<RecentDataset[]>([]);
-  const [isLoadingRecent, setIsLoadingRecent] = useState(false);
-  const [recentError, setRecentError] = useState<string | null>(null);
+  const report = reportState as ScanReport | null;
+  const previewData = previewDataState as OutlierPreviewResponse | null;
+  const missingPreviewData = missingPreviewDataState as MissingPreviewResponse | null;
+  const recentDatasets = recentDatasetsState as RecentDataset[];
+
+  const setIsDragging = (value: boolean) => setDataQualityUi({ isDragging: value });
+  const setIsLoading = (value: boolean) => setDataQualityUi({ isLoading: value });
+  const setError = (value: string | null) => setDataQualityUi({ error: value });
+  const setReport = (value: ScanReport | null) => setDataQualityUi({ report: value });
+  const setToastMessage = (value: string | null) => setDataQualityUi({ toastMessage: value });
+  const setIsFixingTimestamps = (value: boolean) => setDataQualityUi({ isFixingTimestamps: value });
+  const setIsUndoing = (value: boolean) => setDataQualityUi({ isUndoing: value });
+  const setIsSaving = (value: boolean) => setDataQualityUi({ isSaving: value });
+  const setIsOutlierModalOpen = (value: boolean) => setDataQualityUi({ isOutlierModalOpen: value });
+  const setIsProcessingAction = (value: boolean) => setDataQualityUi({ isProcessingAction: value });
+  const setPreviewData = (value: OutlierPreviewResponse | null) => setDataQualityUi({ previewData: value });
+  const setIsPreviewLoading = (value: boolean) => setDataQualityUi({ isPreviewLoading: value });
+  const setPreviewError = (value: string | null) => setDataQualityUi({ previewError: value });
+  const setIsMissingModalOpen = (value: boolean) => setDataQualityUi({ isMissingModalOpen: value });
+  const setMissingPreviewData = (value: MissingPreviewResponse | null) => setDataQualityUi({ missingPreviewData: value });
+  const setIsMissingPreviewLoading = (value: boolean) => setDataQualityUi({ isMissingPreviewLoading: value });
+  const setMissingPreviewError = (value: string | null) => setDataQualityUi({ missingPreviewError: value });
+  const setRecentDatasets = (value: RecentDataset[]) => setDataQualityUi({ recentDatasets: value });
+  const setIsLoadingRecent = (value: boolean) => setDataQualityUi({ isLoadingRecent: value });
+  const setRecentError = (value: string | null) => setDataQualityUi({ recentError: value });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const outlierModalRef = useRef<HTMLDivElement>(null);
@@ -318,9 +362,12 @@ export const DataQualityView: React.FC = () => {
 
     setError(null);
     setReport(null);
-    setFileId(null);
-    setOriginalFilename(nextFile.name);
-    setFile(nextFile);
+    setActiveDataset({
+      file: nextFile,
+      fileId: null,
+      originalFilename: nextFile.name,
+      columns: [],
+    });
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -378,7 +425,10 @@ export const DataQualityView: React.FC = () => {
         }
 
         currentFileId = uploadResult.file_id;
-        setFileId(currentFileId);
+        setActiveDataset({
+          fileId: currentFileId,
+          originalFilename: uploadResult.original_filename || file?.name || originalFilename || null,
+        });
       }
 
       const scanResponse = await apiFetch('/api/dq/scan', {
@@ -402,6 +452,7 @@ export const DataQualityView: React.FC = () => {
 
       const scanResult = (await scanResponse.json()) as ScanReport;
       setReport(scanResult);
+      setDatasetColumns(scanResult.columns || []);
     } catch (scanError) {
       const message =
         scanError instanceof TypeError
@@ -441,9 +492,10 @@ export const DataQualityView: React.FC = () => {
       if (!uploadResponse.ok) throw new Error('Upload failed');
       const uploadResult = await uploadResponse.json() as UploadResponse;
       currentFileId = uploadResult.file_id;
-      setFileId(currentFileId);
-      setOriginalFilename(uploadResult.original_filename || file?.name || null);
-      setOriginalFilename(uploadResult.original_filename || file?.name || null);
+      setActiveDataset({
+        fileId: currentFileId,
+        originalFilename: uploadResult.original_filename || file?.name || null,
+      });
     }
 
     if (!currentFileId) throw new Error('No file available for processing');
@@ -545,7 +597,7 @@ export const DataQualityView: React.FC = () => {
         if (!uploadResponse.ok) throw new Error('Upload failed');
         const uploadResult = await uploadResponse.json() as UploadResponse;
         currentFileId = uploadResult.file_id;
-        setFileId(currentFileId);
+        setActiveDataset({ fileId: currentFileId });
       }
       
       if (!currentFileId) throw new Error('No file available for processing');
@@ -731,9 +783,12 @@ export const DataQualityView: React.FC = () => {
   };
 
   const handleSelectRecentDataset = async (datasetId: string, filename: string) => {
-    setFileId(datasetId);
-    setOriginalFilename(filename || null);
-    setFile(null);
+    setActiveDataset({
+      file: null,
+      fileId: datasetId,
+      originalFilename: filename || null,
+      columns: [],
+    });
     try {
       setIsLoading(true);
       setError(null);
@@ -759,6 +814,7 @@ export const DataQualityView: React.FC = () => {
 
       const scanResult = (await scanResponse.json()) as ScanReport;
       setReport(scanResult);
+      setDatasetColumns(scanResult.columns || []);
       setToastMessage(`Loaded dataset: ${filename || datasetId}`);
     } catch (scanError) {
       const message =

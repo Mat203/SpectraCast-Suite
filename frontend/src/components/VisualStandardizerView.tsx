@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { apiFetch, downloadFile, fetchBlobUrl } from '../lib/api';
+import { useAppStore } from '../store/useAppStore';
+import type { AppStoreState } from '../store/useAppStore';
 
 type Tab = 'plot_generator' | 'code_standardizer' | 'style_creator';
 
@@ -15,30 +17,62 @@ interface RecentDataset {
 }
 
 export const VisualStandardizerView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('plot_generator');
-  const [styles, setStyles] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const activeDataset = useAppStore((state: AppStoreState) => state.activeDataset) as AppStoreState['activeDataset'];
+  const setActiveDataset = useAppStore((state: AppStoreState) => state.setActiveDataset) as AppStoreState['setActiveDataset'];
+  const setDatasetColumns = useAppStore((state: AppStoreState) => state.setDatasetColumns) as AppStoreState['setDatasetColumns'];
+  const visualStandardizer = useAppStore((state: AppStoreState) => state.visualStandardizer) as AppStoreState['visualStandardizer'];
+  const setVisualStandardizer = useAppStore((state: AppStoreState) => state.setVisualStandardizer) as AppStoreState['setVisualStandardizer'];
+  const visualStandardizerUi = useAppStore((state: AppStoreState) => state.visualStandardizerUi) as AppStoreState['visualStandardizerUi'];
+  const setVisualStandardizerUi = useAppStore((state: AppStoreState) => state.setVisualStandardizerUi) as AppStoreState['setVisualStandardizerUi'];
 
-  const [file, setFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [columns, setColumns] = useState<string[]>([]);
-  const [xAxis, setXAxis] = useState<string>('');
-  const [yAxis, setYAxis] = useState<string>('');
-  const [plotType, setPlotType] = useState<string>('line');
-  const [selectedStyle, setSelectedStyle] = useState<string>('');
-  const [outputFilename, setOutputFilename] = useState<string>('plot.png');
-  const [plotResult, setPlotResult] = useState<GeneratePlotResponse | null>(null);
+  const { file, fileId, columns } = activeDataset;
+  const {
+    activeTab,
+    xAxis,
+    yAxis,
+    plotType,
+    selectedStyle,
+    outputFilename,
+    codeStyle,
+    rawCode,
+  } = visualStandardizer;
+
+  const setActiveTab = (value: Tab) => setVisualStandardizer({ activeTab: value });
+  const setXAxis = (value: string) => setVisualStandardizer({ xAxis: value });
+  const setYAxis = (value: string) => setVisualStandardizer({ yAxis: value });
+  const setPlotType = (value: string) => setVisualStandardizer({ plotType: value });
+  const setSelectedStyle = (value: string) => setVisualStandardizer({ selectedStyle: value });
+  const setOutputFilename = (value: string) => setVisualStandardizer({ outputFilename: value });
+  const setCodeStyle = (value: string) => setVisualStandardizer({ codeStyle: value });
+  const setRawCode = (value: string) => setVisualStandardizer({ rawCode: value });
+
+  const {
+    isDragging,
+    isLoading,
+    error,
+    styles,
+    plotResult: plotResultState,
+    recentDatasets: recentDatasetsState,
+    isLoadingRecent,
+    recentError,
+    cleanedCode,
+  } = visualStandardizerUi;
+
+  const plotResult = plotResultState as GeneratePlotResponse | null;
+  const recentDatasets = recentDatasetsState as RecentDataset[];
+
+  const setIsDragging = (value: boolean) => setVisualStandardizerUi({ isDragging: value });
+  const setIsLoading = (value: boolean) => setVisualStandardizerUi({ isLoading: value });
+  const setError = (value: string | null) => setVisualStandardizerUi({ error: value });
+  const setStyles = (value: string[]) => setVisualStandardizerUi({ styles: value });
+  const setPlotResult = (value: GeneratePlotResponse | null) => setVisualStandardizerUi({ plotResult: value });
+  const setRecentDatasets = (value: RecentDataset[]) => setVisualStandardizerUi({ recentDatasets: value });
+  const setIsLoadingRecent = (value: boolean) => setVisualStandardizerUi({ isLoadingRecent: value });
+  const setRecentError = (value: string | null) => setVisualStandardizerUi({ recentError: value });
+  const setCleanedCode = (value: string) => setVisualStandardizerUi({ cleanedCode: value });
+
   const [plotPreviewUrl, setPlotPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
-  const [recentDatasets, setRecentDatasets] = useState<RecentDataset[]>([]);
-  const [isLoadingRecent, setIsLoadingRecent] = useState(false);
-  const [recentError, setRecentError] = useState<string | null>(null);
-
-  const [rawCode, setRawCode] = useState<string>('');
-  const [codeStyle, setCodeStyle] = useState<string>('');
-  const [cleanedCode, setCleanedCode] = useState<string>('');
 
   useEffect(() => {
     const fetchStyles = async () => {
@@ -52,8 +86,13 @@ export const VisualStandardizerView: React.FC = () => {
         const data = await res.json();
         setStyles(data.styles || []);
         if (data.styles && data.styles.length > 0) {
-          setSelectedStyle(data.styles[0]);
-          setCodeStyle(data.styles[0]);
+          const current = useAppStore.getState().visualStandardizer;
+          if (!current.selectedStyle) {
+            setVisualStandardizer({ selectedStyle: data.styles[0] });
+          }
+          if (!current.codeStyle) {
+            setVisualStandardizer({ codeStyle: data.styles[0] });
+          }
         }
       } catch (err) {
         if (err instanceof Error) {
@@ -66,7 +105,22 @@ export const VisualStandardizerView: React.FC = () => {
       }
     };
     fetchStyles();
-  }, []);
+  }, [setVisualStandardizer]);
+
+  useEffect(() => {
+    if (!columns.length) {
+      return;
+    }
+
+    const shouldResetXAxis = !xAxis || !columns.includes(xAxis);
+    const shouldResetYAxis = !yAxis || !columns.includes(yAxis);
+
+    if (shouldResetXAxis || shouldResetYAxis) {
+      const nextXAxis = columns[0] ?? '';
+      const nextYAxis = columns[1] ?? columns[0] ?? '';
+      setVisualStandardizer({ xAxis: nextXAxis, yAxis: nextYAxis });
+    }
+  }, [columns, xAxis, yAxis, setVisualStandardizer]);
 
   useEffect(() => {
     let isActive = true;
@@ -163,7 +217,7 @@ export const VisualStandardizerView: React.FC = () => {
         .map((header) => header.trim().replace(/^"|"$/g, ''))
         .filter(Boolean);
 
-      setColumns(parsedHeaders);
+      setDatasetColumns(parsedHeaders);
       if (parsedHeaders.length >= 2) {
         setXAxis(parsedHeaders[0]);
         setYAxis(parsedHeaders[1]);
@@ -178,7 +232,7 @@ export const VisualStandardizerView: React.FC = () => {
 
     reader.onerror = () => {
       setError('Could not read CSV headers. Try another file.');
-      setColumns([]);
+      setDatasetColumns([]);
       setXAxis('');
       setYAxis('');
     };
@@ -193,8 +247,12 @@ export const VisualStandardizerView: React.FC = () => {
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const droppedFile = e.dataTransfer.files[0];
       if (droppedFile.name.endsWith('.csv')) {
-        setFile(droppedFile);
-        setSelectedDatasetId(null);
+        setActiveDataset({
+          file: droppedFile,
+          fileId: null,
+          originalFilename: droppedFile.name,
+          columns: [],
+        });
         parseColumnsFromFile(droppedFile);
       } else {
         alert('Please upload a .csv file');
@@ -205,8 +263,12 @@ export const VisualStandardizerView: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFile = e.target.files[0];
-      setFile(selectedFile);
-      setSelectedDatasetId(null);
+      setActiveDataset({
+        file: selectedFile,
+        fileId: null,
+        originalFilename: selectedFile.name,
+        columns: [],
+      });
       parseColumnsFromFile(selectedFile);
     }
   };
@@ -230,8 +292,12 @@ export const VisualStandardizerView: React.FC = () => {
       );
 
       setActiveTab('plot_generator');
-      setFile(restoredFile);
-      setSelectedDatasetId(dataset.file_id);
+      setActiveDataset({
+        file: restoredFile,
+        fileId: dataset.file_id,
+        originalFilename: dataset.original_filename || restoredFile.name,
+        columns: [],
+      });
       parseColumnsFromFile(restoredFile);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load the selected dataset');
@@ -253,9 +319,9 @@ export const VisualStandardizerView: React.FC = () => {
     setPlotResult(null);
 
     try {
-      let fileId = selectedDatasetId;
+      let fileIdToUse = fileId;
 
-      if (!fileId) {
+      if (!fileIdToUse) {
         const formData = new FormData();
         formData.append('file', file);
 
@@ -266,7 +332,11 @@ export const VisualStandardizerView: React.FC = () => {
 
         if (!uploadRes.ok) throw new Error('File upload failed');
         const uploadData = await uploadRes.json();
-        fileId = uploadData.file_id;
+        fileIdToUse = uploadData.file_id;
+        setActiveDataset({
+          fileId: fileIdToUse,
+          originalFilename: file?.name || null,
+        });
       }
 
       const generateRes = await apiFetch('/api/vs/generate', {
@@ -275,7 +345,7 @@ export const VisualStandardizerView: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          file_id: fileId,
+          file_id: fileIdToUse,
           style_name: selectedStyle,
           x: xAxis,
           y: yAxis,
@@ -538,7 +608,7 @@ export const VisualStandardizerView: React.FC = () => {
                   )}
 
                   {!isLoadingRecent && recentDatasets.length > 0 && (
-                    <div className="mt-4 flex-1 max-h-102 space-y-2 overflow-y-auto pr-1">
+                    <div className="mt-4 flex-1 max-h-112 space-y-2 overflow-y-auto pr-1">
                       {recentDatasets.map((dataset) => (
                         <button
                           key={dataset.file_id}

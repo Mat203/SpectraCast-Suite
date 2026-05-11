@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { apiFetch } from './api'
 import { isAuthenticated, logout as logoutAuth } from './auth'
+import { useAppStore } from '../store/useAppStore'
 
 interface UserState {
   email: string
@@ -70,6 +71,11 @@ export const UserProvider = ({ children }: UserProviderProps) => {
       refreshUser,
       logout: () => {
         logoutAuth()
+        useAppStore.getState().resetAppState()
+        const persistedStore = useAppStore as unknown as { persist?: { clearStorage?: () => void } }
+        persistedStore.persist?.clearStorage?.()
+        localStorage.clear()
+        sessionStorage.clear()
         setUser(null)
       },
     }),
