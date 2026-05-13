@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { apiFetch, downloadFile, fetchBlobUrl } from '../lib/api';
+import { useHybridCompute } from '../lib/useHybridCompute';
+import { useComputeMode } from '../lib/ComputeModeContext.jsx';
+import { LOCAL_VS_PLOT_CODE, LOCAL_VS_STANDARDIZE_CODE } from '../lib/localComputeScripts';
 import { useAppStore } from '../store/useAppStore';
 import type { AppStoreState } from '../store/useAppStore';
 
@@ -24,6 +27,11 @@ export const VisualStandardizerView: React.FC = () => {
   const setVisualStandardizer = useAppStore((state: AppStoreState) => state.setVisualStandardizer) as AppStoreState['setVisualStandardizer'];
   const visualStandardizerUi = useAppStore((state: AppStoreState) => state.visualStandardizerUi) as AppStoreState['visualStandardizerUi'];
   const setVisualStandardizerUi = useAppStore((state: AppStoreState) => state.setVisualStandardizerUi) as AppStoreState['setVisualStandardizerUi'];
+
+  const { isLocalMode } = useComputeMode();
+  const { execute: executeHybrid } = useHybridCompute();
+
+  const localCsvRef = useRef<string | null>(null);
 
   const { file, fileId, columns } = activeDataset;
   const {
@@ -72,7 +80,37 @@ export const VisualStandardizerView: React.FC = () => {
   const setCleanedCode = (value: string) => setVisualStandardizerUi({ cleanedCode: value });
 
   const [plotPreviewUrl, setPlotPreviewUrl] = useState<string | null>(null);
+  const [localPlotBase64, setLocalPlotBase64] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const ensureLocalCsv = async () => {
+    if (localCsvRef.current) {
+      return localCsvRef.current;
+    }
+    if (!file) {
+      throw new Error('Please upload a CSV file first.');
+    }
+    const csvData = await file.text();
+    localCsvRef.current = csvData;
+    return csvData;
+  };
+
+  const resolvePlotFilename = () => {
+    const trimmed = outputFilename.trim();
+    if (!trimmed) {
+      return 'plot.png';
+    }
+    return trimmed.toLowerCase().endsWith('.png') ? trimmed : `${trimmed}.png`;
+  };
+
+  const downloadBase64Image = (base64: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = `data:image/png;base64,${base64}`;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
 
   useEffect(() => {
     const fetchStyles = async () => {
@@ -165,6 +203,16 @@ export const VisualStandardizerView: React.FC = () => {
       return;
     }
 
+    if (localPlotBase64) {
+      setPlotPreviewUrl(`data:image/png;base64,${localPlotBase64}`);
+      return;
+    }
+
+    if (isLocalMode) {
+      setPlotPreviewUrl(null);
+      return;
+    }
+
     let isActive = true;
 
     const loadPreview = async () => {
@@ -185,11 +233,11 @@ export const VisualStandardizerView: React.FC = () => {
     return () => {
       isActive = false;
     };
-  }, [plotResult]);
+  }, [plotResult, isLocalMode, localPlotBase64]);
 
   useEffect(() => {
     return () => {
-      if (plotPreviewUrl) {
+      if (plotPreviewUrl && plotPreviewUrl.startsWith('blob:')) {
         URL.revokeObjectURL(plotPreviewUrl);
       }
     };
@@ -254,6 +302,10 @@ export const VisualStandardizerView: React.FC = () => {
           columns: [],
         });
         parseColumnsFromFile(droppedFile);
+        localCsvRef.current = null;
+        setLocalPlotBase64(null);
+        setPlotPreviewUrl(null);
+        setPlotResult(null);
       } else {
         alert('Please upload a .csv file');
       }
@@ -270,6 +322,10 @@ export const VisualStandardizerView: React.FC = () => {
         columns: [],
       });
       parseColumnsFromFile(selectedFile);
+      localCsvRef.current = null;
+      setLocalPlotBase64(null);
+      setPlotPreviewUrl(null);
+      setPlotResult(null);
     }
   };
 
@@ -277,6 +333,9 @@ export const VisualStandardizerView: React.FC = () => {
   const handleSelectRecentDataset = async (dataset: RecentDataset) => {
     setError(null);
     setPlotResult(null);
+    setLocalPlotBase64(null);
+    setPlotPreviewUrl(null);
+    localCsvRef.current = null;
 
     try {
       const response = await apiFetch(`/api/dq/download/${dataset.file_id}`);
@@ -317,8 +376,39 @@ export const VisualStandardizerView: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setPlotResult(null);
+    setLocalPlotBase64(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = await ensureLocalCsv();
+        const chartType = plotType === 'bar' || plotType === 'hist'
+          ? '2'
+          : plotType === 'scatter'
+            ? '3'
+            : '1';
+
+        const localResult = await executeHybrid(
+          null,
+          {
+            csvData,
+            x_col: xAxis,
+            y_cols: [yAxis],
+            chart_type: chartType,
+          },
+          { code: LOCAL_VS_PLOT_CODE, packages: ['matplotlib'] },
+        );
+
+        const imageBase64 = localResult?.image_base64 as string | undefined;
+        if (!imageBase64) {
+          throw new Error('Local plot generation failed');
+        }
+
+        setLocalPlotBase64(imageBase64);
+        setPlotPreviewUrl(`data:image/png;base64,${imageBase64}`);
+        setPlotResult({ status: 'success', plot_filename: resolvePlotFilename() });
+        return;
+      }
+
       let fileIdToUse = fileId;
 
       if (!fileIdToUse) {
@@ -381,6 +471,19 @@ export const VisualStandardizerView: React.FC = () => {
     setCleanedCode('');
 
     try {
+      if (isLocalMode) {
+        const localResult = await executeHybrid(
+          null,
+          { raw_code: rawCode, style_name: codeStyle },
+          { code: LOCAL_VS_STANDARDIZE_CODE },
+        );
+        if (localResult?.status === 'error' && localResult?.message) {
+          setError(localResult.message as string);
+        }
+        setCleanedCode((localResult?.cleaned_code as string) || '');
+        return;
+      }
+
       const res = await apiFetch('/api/vs/standardize-code', {
         method: 'POST',
         headers: {
@@ -422,6 +525,10 @@ export const VisualStandardizerView: React.FC = () => {
     setError(null);
 
     try {
+      if (localPlotBase64) {
+        downloadBase64Image(localPlotBase64, resolvePlotFilename());
+        return;
+      }
       await downloadFile(`/api/vs/download/${plotResult.plot_filename}`, plotResult.plot_filename);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed.');

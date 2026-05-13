@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { apiFetch, downloadFile } from '../lib/api';
 import { LLM_MODELS, LLM_PROVIDERS } from '../lib/llmModels';
 import type { LlmProvider } from '../lib/llmModels';
+import { ComputeModeToggle } from './ComputeModeToggle';
 
 interface DatasetInfo {
   file_id: string;
@@ -352,6 +353,16 @@ export const Profile: React.FC = () => {
               {llmSuccess}
             </p>
           )}
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-slate-800">Compute Settings</h3>
+          <p className="mt-2 text-sm text-slate-500">
+            Choose whether SpectraCast Suite should run computations locally in your browser or via the API.
+          </p>
+          <div className="mt-4">
+            <ComputeModeToggle />
+          </div>
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

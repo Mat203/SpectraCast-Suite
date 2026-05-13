@@ -6,6 +6,16 @@ import { MISSING_VALUES_DESCRIPTIONS } from '../lib/missingValueStrategies';
 import type { MissingStrategyKey } from '../lib/missingValueStrategies';
 import { useAppStore } from '../store/useAppStore';
 import type { AppStoreState } from '../store/useAppStore';
+import { useHybridCompute } from '../lib/useHybridCompute';
+import { useComputeMode } from '../lib/ComputeModeContext.jsx';
+import {
+  LOCAL_DQ_FIX_TIMESTAMPS_CODE,
+  LOCAL_DQ_HANDLE_MISSING_CODE,
+  LOCAL_DQ_HANDLE_OUTLIERS_CODE,
+  LOCAL_DQ_PREVIEW_MISSING_CODE,
+  LOCAL_DQ_PREVIEW_OUTLIERS_CODE,
+  LOCAL_DQ_SCAN_CODE,
+} from '../lib/localComputeScripts';
 
 interface UploadResponse {
   status: string;
@@ -93,6 +103,13 @@ export const DataQualityView: React.FC = () => {
   const setDataQuality = useAppStore((state: AppStoreState) => state.setDataQuality) as AppStoreState['setDataQuality'];
   const dataQualityUi = useAppStore((state: AppStoreState) => state.dataQualityUi) as AppStoreState['dataQualityUi'];
   const setDataQualityUi = useAppStore((state: AppStoreState) => state.setDataQualityUi) as AppStoreState['setDataQualityUi'];
+
+  const { isLocalMode } = useComputeMode();
+  const { execute: executeHybrid } = useHybridCompute();
+
+  const localCsvRef = useRef<string | null>(null);
+  const localPreviousCsvRef = useRef<string | null>(null);
+  const localFileIdRef = useRef<string>('local-dataset');
 
   const { file, fileId, originalFilename } = activeDataset;
   const {
@@ -251,6 +268,46 @@ export const DataQualityView: React.FC = () => {
 
   const hasDatetimeAxis = report?.has_datetime_axis !== false;
 
+  const ensureLocalCsv = async () => {
+    if (localCsvRef.current) {
+      return localCsvRef.current;
+    }
+    if (!file) {
+      throw new Error('Select a .csv file before running local analysis.');
+    }
+    const csvData = await file.text();
+    localCsvRef.current = csvData;
+    return csvData;
+  };
+
+  const runLocalScan = async (csvData: string) => {
+    const localReport = await executeHybrid(null, { csvData }, { code: LOCAL_DQ_SCAN_CODE });
+    const hasPreviousState = Boolean(localPreviousCsvRef.current);
+    const nextReport = {
+      ...(localReport as ScanReport),
+      has_previous_state: hasPreviousState,
+      is_modified: hasPreviousState,
+    };
+    setReport(nextReport as ScanReport);
+    setDatasetColumns((localReport?.columns as string[]) || []);
+    setActiveDataset({
+      fileId: localFileIdRef.current,
+      originalFilename: file?.name || originalFilename,
+    });
+  };
+
+  const downloadLocalCsv = (csvData: string, filename: string) => {
+    const blob = new Blob([csvData], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const renderPreviewChart = (data: PreviewSeries | null, showBefore: boolean = true) => {
     if (!data) {
       return null;
@@ -368,6 +425,8 @@ export const DataQualityView: React.FC = () => {
       originalFilename: nextFile.name,
       columns: [],
     });
+    localCsvRef.current = null;
+    localPreviousCsvRef.current = null;
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -402,6 +461,12 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        await runLocalScan(csvData);
+        return;
+      }
+
       let currentFileId = fileId;
 
       if (!useExistingFile || !currentFileId) {
@@ -509,6 +574,27 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        localPreviousCsvRef.current = csvData;
+
+        const result = await executeHybrid(
+          null,
+          { csvData, column: selectedOutlierCol, strategy: outlierStrategy },
+          { code: LOCAL_DQ_HANDLE_OUTLIERS_CODE },
+        );
+
+        const updatedCsv = result?.csv;
+        if (!updatedCsv) {
+          throw new Error('Local outlier handling failed.');
+        }
+
+        localCsvRef.current = updatedCsv;
+        setIsOutlierModalOpen(false);
+        await runLocalScan(updatedCsv);
+        return;
+      }
+
       const currentFileId = await resolveFileId();
 
       const actionRes = await apiFetch('/api/dq/handle-outliers', {
@@ -542,6 +628,17 @@ export const DataQualityView: React.FC = () => {
     setPreviewError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        const previewResult = await executeHybrid(
+          null,
+          { csvData, column: selectedOutlierCol, strategy: outlierStrategy },
+          { code: LOCAL_DQ_PREVIEW_OUTLIERS_CODE },
+        );
+        setPreviewData(previewResult as OutlierPreviewResponse);
+        return;
+      }
+
       const currentFileId = await resolveFileId();
       const response = await apiFetch('/api/dq/preview-outliers', {
         method: 'POST',
@@ -586,6 +683,27 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        localPreviousCsvRef.current = csvData;
+
+        const result = await executeHybrid(
+          null,
+          { csvData, column: selectedMissingCol, strategy: missingStrategy },
+          { code: LOCAL_DQ_HANDLE_MISSING_CODE },
+        );
+
+        const updatedCsv = result?.csv;
+        if (!updatedCsv) {
+          throw new Error('Local missing value handling failed.');
+        }
+
+        localCsvRef.current = updatedCsv;
+        setIsMissingModalOpen(false);
+        await runLocalScan(updatedCsv);
+        return;
+      }
+
       let currentFileId = fileId;
       
       if (!currentFileId && file) {
@@ -633,6 +751,17 @@ export const DataQualityView: React.FC = () => {
     setMissingPreviewError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        const previewResult = await executeHybrid(
+          null,
+          { csvData, column: selectedMissingCol, strategy: missingStrategy },
+          { code: LOCAL_DQ_PREVIEW_MISSING_CODE },
+        );
+        setMissingPreviewData(previewResult as MissingPreviewResponse);
+        return;
+      }
+
       const currentFileId = await resolveFileId();
       const response = await apiFetch('/api/dq/preview-missing', {
         method: 'POST',
@@ -667,6 +796,27 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        localPreviousCsvRef.current = csvData;
+        const result = await executeHybrid(
+          null,
+          { csvData },
+          { code: LOCAL_DQ_FIX_TIMESTAMPS_CODE },
+        );
+
+        if (!result?.csv) {
+          throw new Error('Local timestamp fix failed.');
+        }
+
+        localCsvRef.current = result.csv;
+        setToastMessage(
+          `Time axis restored! ${result.inserted_rows || 0} empty rows inserted. Please select an imputation strategy to fill data gaps.`,
+        );
+        await runLocalScan(result.csv);
+        return;
+      }
+
       const currentFileId = await resolveFileId();
       const response = await apiFetch('/api/dq/fix-timestamps', {
         method: 'POST',
@@ -693,7 +843,11 @@ export const DataQualityView: React.FC = () => {
   };
 
   const handleUndoLastChange = async () => {
-    if (!fileId || !report?.has_previous_state) {
+    if (isLocalMode) {
+      if (!localPreviousCsvRef.current) {
+        return;
+      }
+    } else if (!fileId || !report?.has_previous_state) {
       return;
     }
 
@@ -701,6 +855,18 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
+      if (isLocalMode) {
+        const previousCsv = localPreviousCsvRef.current;
+        if (!previousCsv) {
+          throw new Error('No previous local state available to undo.');
+        }
+        localCsvRef.current = previousCsv;
+        localPreviousCsvRef.current = null;
+        setToastMessage('Previous dataset state restored.');
+        await runLocalScan(previousCsv);
+        return;
+      }
+
       const response = await apiFetch('/api/dq/undo', {
         method: 'POST',
         headers: {
@@ -731,6 +897,26 @@ export const DataQualityView: React.FC = () => {
   };
 
   const handleSaveModified = async () => {
+    if (isLocalMode) {
+      const csvData = localCsvRef.current;
+      if (!csvData) {
+        return;
+      }
+
+      setIsSaving(true);
+      setError(null);
+
+      try {
+        downloadLocalCsv(csvData, 'dq_cleaned.csv');
+        setToastMessage('Local cleaned dataset downloaded.');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Save failed');
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+
     if (!fileId) {
       return;
     }
@@ -769,6 +955,21 @@ export const DataQualityView: React.FC = () => {
   };
 
   const handleDownloadDataset = async () => {
+    if (isLocalMode) {
+      const csvData = localCsvRef.current;
+      if (!csvData) {
+        return;
+      }
+      setError(null);
+      try {
+        const filename = originalFilename || file?.name || 'dataset.csv';
+        downloadLocalCsv(csvData, filename);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Download failed.');
+      }
+      return;
+    }
+
     if (!fileId) {
       return;
     }
@@ -1133,8 +1334,14 @@ export const DataQualityView: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleSaveModified}
-                    disabled={isSaving || report?.is_modified}
-                    title={report?.is_modified ? 'Dataset already saved' : 'Save the current version permanently'}
+                    disabled={isSaving || (!isLocalMode && report?.is_modified)}
+                    title={
+                      isLocalMode
+                        ? 'Download the current version'
+                        : report?.is_modified
+                          ? 'Dataset already saved'
+                          : 'Save the current version permanently'
+                    }
                     className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isSaving ? 'Saving...' : 'Save Changes'}
@@ -1142,7 +1349,7 @@ export const DataQualityView: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleUndoLastChange}
-                    disabled={isUndoing || !report.has_previous_state}
+                    disabled={isUndoing || (isLocalMode ? !localPreviousCsvRef.current : !report.has_previous_state)}
                     className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isUndoing ? 'Undoing...' : 'Undo'}

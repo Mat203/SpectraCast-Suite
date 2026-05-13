@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { apiFetch, downloadFile } from '../lib/api';
+import { useHybridCompute } from '../lib/useHybridCompute';
+import { useComputeMode } from '../lib/ComputeModeContext.jsx';
+import { LOCAL_LI_RUN_CODE } from '../lib/localComputeScripts';
 import { useAppStore } from '../store/useAppStore';
 import type { AppStoreState } from '../store/useAppStore';
 
@@ -21,6 +24,9 @@ interface LeadingIndicatorsResponse {
   trends_file: string;
   correlations_file: string;
   top_results: Record<string, unknown>[];
+  trends_csv?: string;
+  correlations_csv?: string;
+  is_local?: boolean;
 }
 
 export const LeadingIndicatorsView: React.FC = () => {
@@ -31,6 +37,12 @@ export const LeadingIndicatorsView: React.FC = () => {
   const setLeadingIndicators = useAppStore((state: AppStoreState) => state.setLeadingIndicators) as AppStoreState['setLeadingIndicators'];
   const leadingIndicatorsUi = useAppStore((state: AppStoreState) => state.leadingIndicatorsUi) as AppStoreState['leadingIndicatorsUi'];
   const setLeadingIndicatorsUi = useAppStore((state: AppStoreState) => state.setLeadingIndicatorsUi) as AppStoreState['setLeadingIndicatorsUi'];
+
+  const { isLocalMode } = useComputeMode();
+  const { execute: executeHybrid } = useHybridCompute();
+
+  const localCsvRef = useRef<string | null>(null);
+  const localFileIdRef = useRef<string>('local-dataset');
 
   const { file, fileId, columns } = activeDataset;
   const { targetColumn, region, geoCode, extraContext } = leadingIndicators;
@@ -62,6 +74,30 @@ export const LeadingIndicatorsView: React.FC = () => {
   const setRecentError = (value: string | null) => setLeadingIndicatorsUi({ recentError: value });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const ensureLocalCsv = async () => {
+    if (localCsvRef.current) {
+      return localCsvRef.current;
+    }
+    if (!file) {
+      throw new Error('Please upload a CSV file first.');
+    }
+    const csvData = await file.text();
+    localCsvRef.current = csvData;
+    return csvData;
+  };
+
+  const downloadLocalCsv = (csvData: string, filename: string) => {
+    const blob = new Blob([csvData], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     let isActive = true;
@@ -161,6 +197,7 @@ export const LeadingIndicatorsView: React.FC = () => {
       columns: [],
     });
     parseColumnsFromFile(nextFile);
+    localCsvRef.current = null;
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -188,6 +225,7 @@ export const LeadingIndicatorsView: React.FC = () => {
   const handleSelectRecentDataset = async (dataset: RecentDataset) => {
     setError(null);
     setResult(null);
+    localCsvRef.current = null;
 
     try {
       const response = await apiFetch(`/api/dq/download/${dataset.file_id}`);
@@ -255,6 +293,39 @@ export const LeadingIndicatorsView: React.FC = () => {
     setError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = await ensureLocalCsv();
+        const localResult = await executeHybrid(
+          null,
+          {
+            csvData,
+            target_col: targetColumn,
+            region: region.trim(),
+            geo: geoCode.trim() || 'UA',
+            extra_info: extraContext.trim(),
+          },
+          { code: LOCAL_LI_RUN_CODE },
+        );
+
+        const nextResult: LeadingIndicatorsResponse = {
+          status: localResult?.status || 'success',
+          queries_generated: (localResult?.queries_generated as string[]) || [],
+          trends_file: 'local_trends.csv',
+          correlations_file: 'local_correlations.csv',
+          top_results: (localResult?.top_results as Record<string, unknown>[]) || [],
+          trends_csv: localResult?.trends_csv as string | undefined,
+          correlations_csv: localResult?.correlations_csv as string | undefined,
+          is_local: true,
+        };
+
+        setActiveDataset({
+          fileId: localFileIdRef.current,
+          originalFilename: file?.name || null,
+        });
+        setResult(nextResult);
+        return;
+      }
+
       let fileIdToUse = fileId;
 
       if (!fileIdToUse) {
@@ -328,7 +399,18 @@ export const LeadingIndicatorsView: React.FC = () => {
     setError(null);
   };
 
-  const handleDownload = async (pathFromBackend: string, fallbackName: string) => {
+  const handleDownload = async (pathFromBackend: string, fallbackName: string, localCsv?: string) => {
+    const shouldUseLocal = (isLocalMode || result?.is_local) && typeof localCsv === 'string';
+    if (shouldUseLocal) {
+      setError(null);
+      try {
+        downloadLocalCsv(localCsv as string, fallbackName);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Download failed.');
+      }
+      return;
+    }
+
     const fileName = pathFromBackend.split('/').pop() || fallbackName;
     setError(null);
 
@@ -612,14 +694,14 @@ export const LeadingIndicatorsView: React.FC = () => {
               <div className="mt-5 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => handleDownload(result.trends_file, 'raw_trends.csv')}
+                  onClick={() => handleDownload(result.trends_file, 'raw_trends.csv', result.trends_csv)}
                   className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700"
                 >
                   Download Raw Trends CSV
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDownload(result.correlations_file, 'correlations.csv')}
+                  onClick={() => handleDownload(result.correlations_file, 'correlations.csv', result.correlations_csv)}
                   className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
                   Download Correlations CSV
