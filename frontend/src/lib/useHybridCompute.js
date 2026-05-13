@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { apiFetch } from './api';
 import { useComputeMode } from './ComputeModeContext';
 
@@ -6,6 +6,8 @@ let sharedWorker;
 let workerReady = false;
 let nextRequestId = 1;
 const pendingRequests = new Map();
+let localRuntimeReady = false;
+let localRuntimePromise = null;
 
 const ensureWorker = () => {
   if (!sharedWorker) {
@@ -54,6 +56,35 @@ export const useHybridCompute = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
+  const [localRuntimeStatus, setLocalRuntimeStatus] = useState(localRuntimeReady ? 'ready' : 'idle');
+  const [localRuntimeError, setLocalRuntimeError] = useState(null);
+
+  const warmupLocalRuntime = useCallback(async () => {
+    if (localRuntimeReady) {
+      setLocalRuntimeStatus('ready');
+      return;
+    }
+
+    setLocalRuntimeStatus('loading');
+    setLocalRuntimeError(null);
+
+    if (!localRuntimePromise) {
+      localRuntimePromise = runInWorker('result = {"status": "ready"}', '', {}, []);
+    }
+
+    try {
+      await localRuntimePromise;
+      localRuntimeReady = true;
+      setLocalRuntimeStatus('ready');
+    } catch (err) {
+      localRuntimePromise = null;
+      localRuntimeReady = false;
+      const message = err instanceof Error ? err.message : 'Local runtime failed to load.';
+      setLocalRuntimeError(message);
+      setLocalRuntimeStatus('error');
+      throw err;
+    }
+  }, []);
 
   const execute = useCallback(async (serverEndpoint, payload, localPythonCode) => {
     setIsLoading(true);
@@ -61,6 +92,7 @@ export const useHybridCompute = () => {
 
     try {
       if (isLocalMode) {
+        await warmupLocalRuntime();
         const localConfig =
           typeof localPythonCode === 'string'
             ? { code: localPythonCode }
@@ -117,7 +149,7 @@ export const useHybridCompute = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [isLocalMode]);
+  }, [isLocalMode, warmupLocalRuntime]);
 
   return useMemo(
     () => ({
@@ -125,7 +157,10 @@ export const useHybridCompute = () => {
       isLoading,
       error,
       data,
+      localRuntimeStatus,
+      localRuntimeError,
+      warmupLocalRuntime,
     }),
-    [execute, isLoading, error, data],
+    [execute, isLoading, error, data, localRuntimeStatus, localRuntimeError, warmupLocalRuntime],
   );
 };

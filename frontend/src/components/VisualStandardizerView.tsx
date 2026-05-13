@@ -28,7 +28,7 @@ export const VisualStandardizerView: React.FC = () => {
   const visualStandardizerUi = useAppStore((state: AppStoreState) => state.visualStandardizerUi) as AppStoreState['visualStandardizerUi'];
   const setVisualStandardizerUi = useAppStore((state: AppStoreState) => state.setVisualStandardizerUi) as AppStoreState['setVisualStandardizerUi'];
 
-  const { isLocalMode } = useComputeMode();
+  const { isLocalMode, setIsLocalMode } = useComputeMode();
   const { execute: executeHybrid } = useHybridCompute();
 
   const localCsvRef = useRef<string | null>(null);
@@ -579,7 +579,16 @@ export const VisualStandardizerView: React.FC = () => {
 
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
-            {error}
+            <p>{error}</p>
+            {isLocalMode && (
+              <button
+                type="button"
+                onClick={() => setIsLocalMode(false)}
+                className="mt-2 inline-flex items-center rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+              >
+                Run via API
+              </button>
+            )}
           </div>
         )}
 

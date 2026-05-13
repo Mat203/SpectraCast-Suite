@@ -104,7 +104,7 @@ export const DataQualityView: React.FC = () => {
   const dataQualityUi = useAppStore((state: AppStoreState) => state.dataQualityUi) as AppStoreState['dataQualityUi'];
   const setDataQualityUi = useAppStore((state: AppStoreState) => state.setDataQualityUi) as AppStoreState['setDataQualityUi'];
 
-  const { isLocalMode } = useComputeMode();
+  const { isLocalMode, setIsLocalMode } = useComputeMode();
   const { execute: executeHybrid } = useHybridCompute();
 
   const localCsvRef = useRef<string | null>(null);
@@ -1126,9 +1126,18 @@ export const DataQualityView: React.FC = () => {
               </div>
 
               {error && (
-                <p className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                  {error}
-                </p>
+                <div className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  <p>{error}</p>
+                  {isLocalMode && (
+                    <button
+                      type="button"
+                      onClick={() => setIsLocalMode(false)}
+                      className="mt-2 inline-flex items-center rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                    >
+                      Run via API
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 

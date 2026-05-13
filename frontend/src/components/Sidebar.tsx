@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../lib/userContext';
+import { useComputeMode } from '../lib/ComputeModeContext.jsx';
 
 export type ModuleKey = 'dq' | 'li' | 'vs';
 
@@ -13,6 +14,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onModuleChange }
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useUser();
+  const { isLocalMode } = useComputeMode();
   const isProfileRoute = location.pathname.startsWith('/profile');
 
   const navItemClass = (isActive: boolean) =>
@@ -65,6 +67,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onModuleChange }
 
       </nav>
     
+      {isLocalMode && (
+        <div className="px-4 pb-2">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-2 py-1 text-[11px] font-semibold text-emerald-200">
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M16.5 11V7a4.5 4.5 0 10-9 0v4m-2 0h13a2 2 0 012 2v6a2 2 0 01-2 2h-13a2 2 0 01-2-2v-6a2 2 0 012-2z"
+              />
+            </svg>
+            Local
+          </div>
+        </div>
+      )}
+
       <div className="px-4 py-4 border-t border-slate-800 space-y-3">
         <div className="text-xs text-slate-400">
           <p>Signed in as</p>
