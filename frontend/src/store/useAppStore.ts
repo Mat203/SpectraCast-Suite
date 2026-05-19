@@ -63,6 +63,21 @@ interface LeadingIndicatorsUiState {
   recentError: string | null;
 }
 
+type LeadingIndicatorsToastMode = 'progress' | 'done';
+
+interface LeadingIndicatorsStreamState {
+  requestId: number;
+  requestPayload: Record<string, unknown> | null;
+  requestHeaders: Record<string, string> | null;
+  isProcessing: boolean;
+  currentStage: string;
+  error: string | null;
+  result: unknown | null;
+  toastVisible: boolean;
+  toastMode: LeadingIndicatorsToastMode;
+  toastDismissed: boolean;
+}
+
 interface VisualStandardizerState {
   activeTab: VisualStandardizerTab;
   xAxis: string;
@@ -92,6 +107,7 @@ export interface AppStoreState {
   dataQualityUi: DataQualityUiState;
   leadingIndicators: LeadingIndicatorsState;
   leadingIndicatorsUi: LeadingIndicatorsUiState;
+  leadingIndicatorsStream: LeadingIndicatorsStreamState;
   visualStandardizer: VisualStandardizerState;
   visualStandardizerUi: VisualStandardizerUiState;
   setActiveDataset: (updates: Partial<ActiveDatasetState>) => void;
@@ -101,6 +117,12 @@ export interface AppStoreState {
   setDataQualityUi: (updates: Partial<DataQualityUiState>) => void;
   setLeadingIndicators: (updates: Partial<LeadingIndicatorsState>) => void;
   setLeadingIndicatorsUi: (updates: Partial<LeadingIndicatorsUiState>) => void;
+  setLeadingIndicatorsStream: (updates: Partial<LeadingIndicatorsStreamState>) => void;
+  triggerLeadingIndicatorsStream: (
+    payload: Record<string, unknown>,
+    headers?: Record<string, string>,
+  ) => void;
+  dismissLeadingIndicatorsToast: () => void;
   setVisualStandardizer: (updates: Partial<VisualStandardizerState>) => void;
   setVisualStandardizerUi: (updates: Partial<VisualStandardizerUiState>) => void;
   resetAppState: () => void;
@@ -159,6 +181,18 @@ const initialState = {
     recentDatasets: [],
     isLoadingRecent: false,
     recentError: null,
+  },
+  leadingIndicatorsStream: {
+    requestId: 0,
+    requestPayload: null,
+    requestHeaders: null,
+    isProcessing: false,
+    currentStage: '',
+    error: null,
+    result: null,
+    toastVisible: false,
+    toastMode: 'progress',
+    toastDismissed: false,
   },
   visualStandardizer: {
     activeTab: 'plot_generator',
@@ -236,6 +270,37 @@ export const useAppStore = create<AppStoreState>()(
           leadingIndicatorsUi: {
             ...state.leadingIndicatorsUi,
             ...updates,
+          },
+        })),
+      setLeadingIndicatorsStream: (updates) =>
+        set((state) => ({
+          leadingIndicatorsStream: {
+            ...state.leadingIndicatorsStream,
+            ...updates,
+          },
+        })),
+      triggerLeadingIndicatorsStream: (payload, headers) =>
+        set((state) => ({
+          leadingIndicatorsStream: {
+            ...state.leadingIndicatorsStream,
+            requestId: state.leadingIndicatorsStream.requestId + 1,
+            requestPayload: payload,
+            requestHeaders: headers || null,
+            isProcessing: true,
+            currentStage: '',
+            error: null,
+            result: null,
+            toastVisible: true,
+            toastMode: 'progress',
+            toastDismissed: false,
+          },
+        })),
+      dismissLeadingIndicatorsToast: () =>
+        set((state) => ({
+          leadingIndicatorsStream: {
+            ...state.leadingIndicatorsStream,
+            toastVisible: false,
+            toastDismissed: true,
           },
         })),
       setVisualStandardizer: (updates) =>

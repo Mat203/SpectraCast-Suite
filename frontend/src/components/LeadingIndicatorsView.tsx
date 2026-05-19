@@ -2,9 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { apiFetch, downloadFile } from '../lib/api';
 import { useHybridCompute } from '../lib/useHybridCompute';
 import { useComputeMode } from '../lib/ComputeModeContext.jsx';
-import { useSseRequest } from '../lib/useSseRequest';
 import { LOCAL_LI_RUN_CODE } from '../lib/localComputeScripts';
-import { ProgressToast } from './ProgressToast';
 import { useAppStore } from '../store/useAppStore';
 import type { AppStoreState } from '../store/useAppStore';
 
@@ -45,12 +43,8 @@ export const LeadingIndicatorsView: React.FC = () => {
     setIsLocalMode: (value: boolean) => void;
   };
   const { execute: executeHybrid } = useHybridCompute();
-  const {
-    isProcessing: isStreaming,
-    currentStage,
-    error: streamError,
-    start: startStreaming,
-  } = useSseRequest('/api/leading-indicators');
+  const triggerLeadingIndicatorsStream = useAppStore((state: AppStoreState) => state.triggerLeadingIndicatorsStream);
+  const isStreaming = useAppStore((state: AppStoreState) => state.leadingIndicatorsStream.isProcessing);
 
   const localCsvRef = useRef<string | null>(null);
   const localFileIdRef = useRef<string>('local-dataset');
@@ -156,12 +150,6 @@ export const LeadingIndicatorsView: React.FC = () => {
       setLeadingIndicators({ targetColumn: columns[0] ?? '' });
     }
   }, [columns, targetColumn, setLeadingIndicators]);
-
-  useEffect(() => {
-    if (streamError) {
-      setError(streamError);
-    }
-  }, [streamError, setError]);
 
   const topResultsHeaders = useMemo(() => {
     if (!result?.top_results?.length) {
@@ -371,7 +359,7 @@ export const LeadingIndicatorsView: React.FC = () => {
         });
       }
 
-      const runData = await startStreaming(
+      triggerLeadingIndicatorsStream(
         {
           file_id: fileIdToUse,
           target_col: targetColumn,
@@ -379,11 +367,10 @@ export const LeadingIndicatorsView: React.FC = () => {
           geo: geoCode.trim() || 'UA',
           extra_info: extraContext.trim(),
         },
-        { headers: getByokHeaders() },
+        getByokHeaders(),
       );
-      if (runData) {
-        setResult(runData as LeadingIndicatorsResponse);
-      }
+      setIsLoading(false);
+      return;
     } catch (submitError) {
       const message =
         submitError instanceof TypeError
@@ -427,7 +414,6 @@ export const LeadingIndicatorsView: React.FC = () => {
 
   return (
     <div className="flex-1 h-full bg-slate-100 p-4 md:p-8 overflow-auto">
-      <ProgressToast isProcessing={isStreaming} currentStage={currentStage} />
       <div className="mx-auto w-full max-w-7xl">
         <div className="mb-6 md:mb-8">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Leading Indicators Module</h2>
