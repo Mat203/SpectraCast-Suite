@@ -81,7 +81,7 @@ interface LeadingIndicatorsStreamState {
 interface VisualStandardizerState {
   activeTab: VisualStandardizerTab;
   xAxis: string;
-  yAxis: string;
+  yAxes: string[];
   plotType: string;
   selectedStyle: string;
   outputFilename: string;
@@ -99,6 +99,7 @@ interface VisualStandardizerUiState {
   isLoadingRecent: boolean;
   recentError: string | null;
   cleanedCode: string;
+  chartCode: string;
 }
 
 export interface AppStoreState {
@@ -197,7 +198,7 @@ const initialState = {
   visualStandardizer: {
     activeTab: 'plot_generator',
     xAxis: '',
-    yAxis: '',
+    yAxes: [],
     plotType: 'line',
     selectedStyle: '',
     outputFilename: 'plot.png',
@@ -214,6 +215,7 @@ const initialState = {
     isLoadingRecent: false,
     recentError: null,
     cleanedCode: '',
+    chartCode: '',
   },
 } as const;
 

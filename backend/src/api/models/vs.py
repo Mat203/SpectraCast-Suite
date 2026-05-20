@@ -11,6 +11,7 @@ class GeneratePlotRequest(BaseModel):
     x: str = ""
     x_col: str = ""
     y: str = ""
+    y_axes: List[str] = []
     y_cols: List[str] = []
     plot_type: str = "1"
     chart_type: str = "1"
@@ -20,6 +21,7 @@ class GeneratePlotRequest(BaseModel):
 class GeneratePlotResponse(BaseModel):
     status: str
     plot_filename: str
+    source_code: str = ""
 
 class StandardizeCodeRequest(BaseModel):
     raw_code: str

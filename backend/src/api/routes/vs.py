@@ -22,6 +22,66 @@ from typing import List
 class StylesResponse(BaseModel):
     styles: List[str]
 
+
+def build_plot_source_code(x_col: str, y_cols: List[str], chart_type: str, style_name: str) -> str:
+    safe_y_cols = y_cols or ["y"]
+    y_cols_literal = ", ".join(f"'{col}'" for col in safe_y_cols)
+    lines: List[str] = [
+        "import json",
+        "import pandas as pd",
+        "import matplotlib.pyplot as plt",
+        "",
+        "df = pd.read_csv('your_data.csv')",
+        "",
+    ]
+
+    if style_name:
+        style_file = style_name if style_name.endswith('.json') else f"{style_name}.json"
+        lines.extend([
+            f"with open('{style_file}', 'r') as f:",
+            "    style = json.load(f)",
+            "plt.rcParams.update(style)",
+            "",
+        ])
+
+    if x_col:
+        lines.append(f"x = df['{x_col}']")
+    else:
+        lines.append("x = df.index")
+
+    lines.append("")
+
+    if chart_type == '2':
+        lines.extend([
+            "import numpy as np",
+            "indices = np.arange(len(x))",
+            f"bar_width = 0.8 / {len(safe_y_cols)}",
+            f"for i, y_col in enumerate([{y_cols_literal}]):",
+            f"    offset = (i - {len(safe_y_cols)} / 2) * bar_width + bar_width / 2",
+            "    plt.bar(indices + offset, df[y_col], width=bar_width, label=y_col)",
+            "plt.xticks(indices, x)",
+        ])
+    elif chart_type == '3':
+        lines.extend([
+            f"for y_col in [{y_cols_literal}]:",
+            "    plt.scatter(x, df[y_col], label=y_col)",
+        ])
+    else:
+        lines.extend([
+            f"for y_col in [{y_cols_literal}]:",
+            "    plt.plot(x, df[y_col], label=y_col)",
+        ])
+
+    lines.extend([
+        "plt.xlabel('" + (x_col or "Date") + "')",
+        "plt.ylabel('Values')",
+        "plt.legend(frameon=False)",
+        "plt.tight_layout()",
+        "plt.show()",
+    ])
+
+    return "\n".join(lines)
+
 @router.get("/styles", response_model=StylesResponse)
 def get_styles(current_user: User = Depends(get_current_user)):
     from backend.src.modules.vs.style_manager import StyleManager
@@ -64,7 +124,7 @@ def generate_plot(
     output_filename = f"plot_{file_id_safe}.png"
     
     x_col = request.x_col or request.x
-    y_cols = request.y_cols if request.y_cols else ([request.y] if request.y else [])
+    y_cols = request.y_axes if request.y_axes else (request.y_cols if request.y_cols else ([request.y] if request.y else []))
     chart_type = request.chart_type or request.plot_type
 
     output_path = engine.generate_plot(
@@ -82,9 +142,17 @@ def generate_plot(
     storage.put_bytes(output_key, output_path.read_bytes(), content_type="image/png")
     output_path.unlink(missing_ok=True)
 
+    source_code = build_plot_source_code(
+        x_col=x_col,
+        y_cols=y_cols,
+        chart_type=chart_type,
+        style_name=request.style_filename or request.style_name,
+    )
+
     return GeneratePlotResponse(
         status="success",
-        plot_filename=output_filename
+        plot_filename=output_filename,
+        source_code=source_code,
     )
 
 @router.get("/plot/{filename}")

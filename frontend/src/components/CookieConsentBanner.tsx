@@ -4,7 +4,6 @@ export const CookieConsentBanner: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    // Check if user has already given consent
     const hasConsent = localStorage.getItem('spectracast_cookie_consent');
     if (!hasConsent) {
       setIsVisible(true);
@@ -12,7 +11,6 @@ export const CookieConsentBanner: React.FC = () => {
   }, []);
 
   const handleAccept = () => {
-    // Save consent to localStorage
     localStorage.setItem('spectracast_cookie_consent', 'true');
     setIsVisible(false);
   };

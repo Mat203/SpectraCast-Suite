@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { ChartActionButtons } from './ChartActionButtons.tsx';
 import { apiFetch, downloadFile, fetchBlobUrl } from '../lib/api';
 import { useHybridCompute } from '../lib/useHybridCompute';
 import { useComputeMode } from '../lib/ComputeModeContext.jsx';
@@ -11,6 +12,7 @@ type Tab = 'plot_generator' | 'code_standardizer' | 'style_creator';
 interface GeneratePlotResponse {
   status: string;
   plot_filename: string;
+  source_code?: string;
 }
 
 interface RecentDataset {
@@ -28,7 +30,10 @@ export const VisualStandardizerView: React.FC = () => {
   const visualStandardizerUi = useAppStore((state: AppStoreState) => state.visualStandardizerUi) as AppStoreState['visualStandardizerUi'];
   const setVisualStandardizerUi = useAppStore((state: AppStoreState) => state.setVisualStandardizerUi) as AppStoreState['setVisualStandardizerUi'];
 
-  const { isLocalMode, setIsLocalMode } = useComputeMode();
+  const { isLocalMode, setIsLocalMode } = useComputeMode() as {
+    isLocalMode: boolean;
+    setIsLocalMode: (value: boolean) => void;
+  };
   const { execute: executeHybrid } = useHybridCompute();
 
   const localCsvRef = useRef<string | null>(null);
@@ -37,7 +42,7 @@ export const VisualStandardizerView: React.FC = () => {
   const {
     activeTab,
     xAxis,
-    yAxis,
+    yAxes,
     plotType,
     selectedStyle,
     outputFilename,
@@ -45,14 +50,33 @@ export const VisualStandardizerView: React.FC = () => {
     rawCode,
   } = visualStandardizer;
 
+  const resolvedYAxes = Array.isArray(yAxes) ? yAxes : [];
+
   const setActiveTab = (value: Tab) => setVisualStandardizer({ activeTab: value });
   const setXAxis = (value: string) => setVisualStandardizer({ xAxis: value });
-  const setYAxis = (value: string) => setVisualStandardizer({ yAxis: value });
+  const setYAxes = (value: string[]) => setVisualStandardizer({ yAxes: value });
   const setPlotType = (value: string) => setVisualStandardizer({ plotType: value });
   const setSelectedStyle = (value: string) => setVisualStandardizer({ selectedStyle: value });
   const setOutputFilename = (value: string) => setVisualStandardizer({ outputFilename: value });
   const setCodeStyle = (value: string) => setVisualStandardizer({ codeStyle: value });
   const setRawCode = (value: string) => setVisualStandardizer({ rawCode: value });
+
+  const toggleYAxis = (value: string) => {
+    if (!value) {
+      return;
+    }
+    if (resolvedYAxes.includes(value)) {
+      setYAxes(resolvedYAxes.filter((axis) => axis !== value));
+      return;
+    }
+    setYAxes([...resolvedYAxes, value]);
+  };
+
+  useEffect(() => {
+    if (!Array.isArray(yAxes)) {
+      setYAxes([]);
+    }
+  }, [yAxes]);
 
   const {
     isDragging,
@@ -64,6 +88,7 @@ export const VisualStandardizerView: React.FC = () => {
     isLoadingRecent,
     recentError,
     cleanedCode,
+    chartCode,
   } = visualStandardizerUi;
 
   const plotResult = plotResultState as GeneratePlotResponse | null;
@@ -78,6 +103,7 @@ export const VisualStandardizerView: React.FC = () => {
   const setIsLoadingRecent = (value: boolean) => setVisualStandardizerUi({ isLoadingRecent: value });
   const setRecentError = (value: string | null) => setVisualStandardizerUi({ recentError: value });
   const setCleanedCode = (value: string) => setVisualStandardizerUi({ cleanedCode: value });
+  const setChartCode = (value: string) => setVisualStandardizerUi({ chartCode: value });
 
   const [plotPreviewUrl, setPlotPreviewUrl] = useState<string | null>(null);
   const [localPlotBase64, setLocalPlotBase64] = useState<string | null>(null);
@@ -151,14 +177,29 @@ export const VisualStandardizerView: React.FC = () => {
     }
 
     const shouldResetXAxis = !xAxis || !columns.includes(xAxis);
-    const shouldResetYAxis = !yAxis || !columns.includes(yAxis);
+    const normalizedYAxes = resolvedYAxes.filter((axis) => columns.includes(axis));
+    const shouldResetYAxis = normalizedYAxes.length === 0;
 
-    if (shouldResetXAxis || shouldResetYAxis) {
+    if (shouldResetXAxis || shouldResetYAxis || normalizedYAxes.length !== resolvedYAxes.length) {
       const nextXAxis = columns[0] ?? '';
-      const nextYAxis = columns[1] ?? columns[0] ?? '';
-      setVisualStandardizer({ xAxis: nextXAxis, yAxis: nextYAxis });
+      const fallbackYAxis = columns[1] ?? columns[0] ?? '';
+      const updates: { xAxis?: string; yAxes?: string[] } = {};
+
+      if (shouldResetXAxis) {
+        updates.xAxis = nextXAxis;
+      }
+
+      if (shouldResetYAxis) {
+        updates.yAxes = fallbackYAxis ? [fallbackYAxis] : [];
+      } else if (normalizedYAxes.length !== resolvedYAxes.length) {
+        updates.yAxes = normalizedYAxes;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        setVisualStandardizer(updates);
+      }
     }
-  }, [columns, xAxis, yAxis, setVisualStandardizer]);
+  }, [columns, xAxis, resolvedYAxes, yAxes, setVisualStandardizer]);
 
   useEffect(() => {
     let isActive = true;
@@ -268,13 +309,13 @@ export const VisualStandardizerView: React.FC = () => {
       setDatasetColumns(parsedHeaders);
       if (parsedHeaders.length >= 2) {
         setXAxis(parsedHeaders[0]);
-        setYAxis(parsedHeaders[1]);
+        setYAxes([parsedHeaders[1]]);
       } else if (parsedHeaders.length === 1) {
         setXAxis(parsedHeaders[0]);
-        setYAxis(parsedHeaders[0]);
+        setYAxes([parsedHeaders[0]]);
       } else {
         setXAxis('');
-        setYAxis('');
+        setYAxes([]);
       }
     };
 
@@ -282,7 +323,7 @@ export const VisualStandardizerView: React.FC = () => {
       setError('Could not read CSV headers. Try another file.');
       setDatasetColumns([]);
       setXAxis('');
-      setYAxis('');
+      setYAxes([]);
     };
 
     reader.readAsText(nextFile.slice(0, 1024));
@@ -306,6 +347,7 @@ export const VisualStandardizerView: React.FC = () => {
         setLocalPlotBase64(null);
         setPlotPreviewUrl(null);
         setPlotResult(null);
+        setChartCode('');
       } else {
         alert('Please upload a .csv file');
       }
@@ -326,6 +368,7 @@ export const VisualStandardizerView: React.FC = () => {
       setLocalPlotBase64(null);
       setPlotPreviewUrl(null);
       setPlotResult(null);
+      setChartCode('');
     }
   };
 
@@ -335,6 +378,7 @@ export const VisualStandardizerView: React.FC = () => {
     setPlotResult(null);
     setLocalPlotBase64(null);
     setPlotPreviewUrl(null);
+    setChartCode('');
     localCsvRef.current = null;
 
     try {
@@ -368,7 +412,7 @@ export const VisualStandardizerView: React.FC = () => {
   };
 
   const handleGeneratePlot = async () => {
-    if (!file || !xAxis || !yAxis || !selectedStyle || !outputFilename) {
+    if (!file || !xAxis || resolvedYAxes.length === 0 || !selectedStyle || !outputFilename) {
       setError("Please fill all fields for plot generation");
       return;
     }
@@ -377,6 +421,7 @@ export const VisualStandardizerView: React.FC = () => {
     setError(null);
     setPlotResult(null);
     setLocalPlotBase64(null);
+    setChartCode('');
 
     try {
       if (isLocalMode) {
@@ -392,7 +437,7 @@ export const VisualStandardizerView: React.FC = () => {
           {
             csvData,
             x_col: xAxis,
-            y_cols: [yAxis],
+            y_cols: resolvedYAxes,
             chart_type: chartType,
           },
           { code: LOCAL_VS_PLOT_CODE, packages: ['matplotlib'] },
@@ -406,6 +451,9 @@ export const VisualStandardizerView: React.FC = () => {
         setLocalPlotBase64(imageBase64);
         setPlotPreviewUrl(`data:image/png;base64,${imageBase64}`);
         setPlotResult({ status: 'success', plot_filename: resolvePlotFilename() });
+        if (localResult?.source_code) {
+          setChartCode(localResult.source_code as string);
+        }
         return;
       }
 
@@ -438,7 +486,7 @@ export const VisualStandardizerView: React.FC = () => {
           file_id: fileIdToUse,
           style_name: selectedStyle,
           x: xAxis,
-          y: yAxis,
+          y_axes: resolvedYAxes,
           plot_type: plotType,
           output_filename: outputFilename
         }),
@@ -448,6 +496,7 @@ export const VisualStandardizerView: React.FC = () => {
       const generateData = await generateRes.json();
       setPlotPreviewUrl(null);
       setPlotResult(generateData);
+      setChartCode(generateData.source_code || '');
 
     } catch (err) {
       if (err instanceof Error) {
@@ -638,17 +687,28 @@ export const VisualStandardizerView: React.FC = () => {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">Y-Axis</label>
-                      <select
-                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        value={yAxis}
-                        onChange={(e) => setYAxis(e.target.value)}
-                      >
-                        <option value="">Select column...</option>
-                        {columns.map((col) => (
-                          <option key={col} value={col}>{col}</option>
-                        ))}
-                      </select>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Y-Axis (Multi-select)</label>
+                      <div className="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm max-h-40 overflow-y-auto">
+                        {columns.length === 0 && (
+                          <p className="text-slate-500">Upload a dataset to pick columns.</p>
+                        )}
+                        {columns.length > 0 && (
+                          <div className="space-y-2">
+                            {columns.map((col) => (
+                              <label key={col} className="flex items-center gap-2 text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                  checked={resolvedYAxes.includes(col)}
+                                  onChange={() => toggleYAxis(col)}
+                                />
+                                <span className="truncate" title={col}>{col}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">Select one or more columns for the Y-axis.</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">Plot Type</label>
@@ -762,16 +822,11 @@ export const VisualStandardizerView: React.FC = () => {
                  <div className="mt-6 bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
                     <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center">
                       <h4 className="text-slate-800 font-medium">Generated Plot Preview</h4>
-                      <button
-                        type="button"
-                        onClick={handleDownloadPlot}
-                        className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center gap-1"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                        Download Image
-                      </button>
+                      <ChartActionButtons
+                        onDownload={handleDownloadPlot}
+                        isDownloadDisabled={isLoading || !plotResult?.plot_filename}
+                        chartCode={chartCode}
+                      />
                     </div>
                     <div className="p-4 bg-slate-50 flex justify-center custom-plot-preview">
                       {plotPreviewUrl ? (
