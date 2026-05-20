@@ -29,6 +29,8 @@ export const VisualStandardizerView: React.FC = () => {
   const setVisualStandardizer = useAppStore((state: AppStoreState) => state.setVisualStandardizer) as AppStoreState['setVisualStandardizer'];
   const visualStandardizerUi = useAppStore((state: AppStoreState) => state.visualStandardizerUi) as AppStoreState['visualStandardizerUi'];
   const setVisualStandardizerUi = useAppStore((state: AppStoreState) => state.setVisualStandardizerUi) as AppStoreState['setVisualStandardizerUi'];
+  const visualStandardizerSession = useAppStore((state: AppStoreState) => state.visualStandardizerSession) as AppStoreState['visualStandardizerSession'];
+  const setVisualStandardizerSession = useAppStore((state: AppStoreState) => state.setVisualStandardizerSession) as AppStoreState['setVisualStandardizerSession'];
 
   const { isLocalMode, setIsLocalMode } = useComputeMode() as {
     isLocalMode: boolean;
@@ -307,6 +309,7 @@ export const VisualStandardizerView: React.FC = () => {
         .filter(Boolean);
 
       setDatasetColumns(parsedHeaders);
+      setVisualStandardizerSession({ columns: parsedHeaders });
       if (parsedHeaders.length >= 2) {
         setXAxis(parsedHeaders[0]);
         setYAxes([parsedHeaders[1]]);
@@ -322,12 +325,44 @@ export const VisualStandardizerView: React.FC = () => {
     reader.onerror = () => {
       setError('Could not read CSV headers. Try another file.');
       setDatasetColumns([]);
+      setVisualStandardizerSession({ columns: [] });
       setXAxis('');
       setYAxes([]);
     };
 
     reader.readAsText(nextFile.slice(0, 1024));
   };
+
+  useEffect(() => {
+    if (!visualStandardizerSession.file) {
+      return;
+    }
+
+    if (file === visualStandardizerSession.file) {
+      return;
+    }
+
+    setActiveDataset({
+      file: visualStandardizerSession.file,
+      fileId: visualStandardizerSession.fileId,
+      originalFilename: visualStandardizerSession.originalFilename,
+      columns: visualStandardizerSession.columns,
+    });
+
+    if (visualStandardizerSession.columns.length > 0) {
+      setDatasetColumns(visualStandardizerSession.columns);
+    } else {
+      parseColumnsFromFile(visualStandardizerSession.file);
+    }
+  }, [
+    file,
+    visualStandardizerSession.file,
+    visualStandardizerSession.fileId,
+    visualStandardizerSession.originalFilename,
+    visualStandardizerSession.columns,
+    setActiveDataset,
+    setDatasetColumns,
+  ]);
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -337,6 +372,12 @@ export const VisualStandardizerView: React.FC = () => {
       const droppedFile = e.dataTransfer.files[0];
       if (droppedFile.name.endsWith('.csv')) {
         setActiveDataset({
+          file: droppedFile,
+          fileId: null,
+          originalFilename: droppedFile.name,
+          columns: [],
+        });
+        setVisualStandardizerSession({
           file: droppedFile,
           fileId: null,
           originalFilename: droppedFile.name,
@@ -358,6 +399,12 @@ export const VisualStandardizerView: React.FC = () => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFile = e.target.files[0];
       setActiveDataset({
+        file: selectedFile,
+        fileId: null,
+        originalFilename: selectedFile.name,
+        columns: [],
+      });
+      setVisualStandardizerSession({
         file: selectedFile,
         fileId: null,
         originalFilename: selectedFile.name,
@@ -401,6 +448,12 @@ export const VisualStandardizerView: React.FC = () => {
         originalFilename: dataset.original_filename || restoredFile.name,
         columns: [],
       });
+      setVisualStandardizerSession({
+        file: restoredFile,
+        fileId: dataset.file_id,
+        originalFilename: dataset.original_filename || restoredFile.name,
+        columns: [],
+      });
       parseColumnsFromFile(restoredFile);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load the selected dataset');
@@ -423,15 +476,15 @@ export const VisualStandardizerView: React.FC = () => {
     setLocalPlotBase64(null);
     setChartCode('');
 
+    const chartType = plotType === 'bar' || plotType === 'hist'
+      ? '2'
+      : plotType === 'scatter'
+        ? '3'
+        : '1';
+
     try {
       if (isLocalMode) {
         const csvData = await ensureLocalCsv();
-        const chartType = plotType === 'bar' || plotType === 'hist'
-          ? '2'
-          : plotType === 'scatter'
-            ? '3'
-            : '1';
-
         const localResult = await executeHybrid(
           null,
           {
@@ -475,6 +528,10 @@ export const VisualStandardizerView: React.FC = () => {
           fileId: fileIdToUse,
           originalFilename: file?.name || null,
         });
+        setVisualStandardizerSession({
+          fileId: fileIdToUse,
+          originalFilename: file?.name || null,
+        });
       }
 
       const generateRes = await apiFetch('/api/vs/generate', {
@@ -487,7 +544,7 @@ export const VisualStandardizerView: React.FC = () => {
           style_name: selectedStyle,
           x: xAxis,
           y_axes: resolvedYAxes,
-          plot_type: plotType,
+          chart_type: chartType,
           output_filename: outputFilename
         }),
       });
@@ -675,20 +732,27 @@ export const VisualStandardizerView: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">X-Axis</label>
-                      <select
-                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        value={xAxis}
-                        onChange={(e) => setXAxis(e.target.value)}
-                      >
-                        <option value="">Select column...</option>
-                        {columns.map((col) => (
-                          <option key={col} value={col}>{col}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          value={xAxis}
+                          onChange={(e) => setXAxis(e.target.value)}
+                        >
+                          <option value="">Select column...</option>
+                          {columns.map((col) => (
+                            <option key={col} value={col}>{col}</option>
+                          ))}
+                        </select>
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                          </svg>
+                        </span>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">Y-Axis (Multi-select)</label>
-                      <div className="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm max-h-40 overflow-y-auto">
+                      <div className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm max-h-40 overflow-y-auto">
                         {columns.length === 0 && (
                           <p className="text-slate-500">Upload a dataset to pick columns.</p>
                         )}
@@ -712,34 +776,48 @@ export const VisualStandardizerView: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">Plot Type</label>
-                      <select
-                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        value={plotType}
-                        onChange={(e) => setPlotType(e.target.value)}
-                      >
-                        <option value="line">Line</option>
-                        <option value="scatter">Scatter</option>
-                        <option value="bar">Bar</option>
-                        <option value="hist">Histogram</option>
-                      </select>
+                      <div className="relative">
+                        <select
+                          className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          value={plotType}
+                          onChange={(e) => setPlotType(e.target.value)}
+                        >
+                          <option value="line">Line</option>
+                          <option value="scatter">Scatter</option>
+                          <option value="bar">Bar</option>
+                          <option value="hist">Histogram</option>
+                        </select>
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                          </svg>
+                        </span>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">Style</label>
-                      <select
-                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        value={selectedStyle}
-                        onChange={(e) => setSelectedStyle(e.target.value)}
-                      >
-                        {styles.map((style) => (
-                          <option key={style} value={style}>{style}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          value={selectedStyle}
+                          onChange={(e) => setSelectedStyle(e.target.value)}
+                        >
+                          {styles.map((style) => (
+                            <option key={style} value={style}>{style}</option>
+                          ))}
+                        </select>
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                          </svg>
+                        </span>
+                      </div>
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-slate-700 mb-2">Output Filename</label>
                       <input
                         type="text"
-                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                         value={outputFilename}
                         onChange={(e) => setOutputFilename(e.target.value)}
                       />
@@ -783,7 +861,7 @@ export const VisualStandardizerView: React.FC = () => {
                   )}
 
                   {!isLoadingRecent && recentDatasets.length > 0 && (
-                    <div className="mt-4 flex-1 max-h-112 space-y-2 overflow-y-auto pr-1">
+                    <div className="mt-4 flex-1 max-h-135 space-y-2 overflow-y-auto pr-1">
                       {recentDatasets.map((dataset) => (
                         <button
                           key={dataset.file_id}
@@ -863,15 +941,22 @@ export const VisualStandardizerView: React.FC = () => {
                <div className="flex items-end gap-4">
                   <div className="flex-1">
                     <label className="block text-sm font-medium text-slate-700 mb-2">Target Style</label>
-                    <select
-                      className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                      value={codeStyle}
-                      onChange={(e) => setCodeStyle(e.target.value)}
-                    >
-                      {styles.map((style) => (
-                        <option key={style} value={style}>{style}</option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <select
+                        className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                        value={codeStyle}
+                        onChange={(e) => setCodeStyle(e.target.value)}
+                      >
+                        {styles.map((style) => (
+                          <option key={style} value={style}>{style}</option>
+                        ))}
+                      </select>
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                        </svg>
+                      </span>
+                    </div>
                   </div>
                   <button
                     onClick={handleStandardizeCode}

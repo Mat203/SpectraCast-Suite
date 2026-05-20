@@ -102,6 +102,13 @@ interface VisualStandardizerUiState {
   chartCode: string;
 }
 
+interface VisualStandardizerSessionState {
+  file: File | null;
+  fileId: string | null;
+  originalFilename: string | null;
+  columns: string[];
+}
+
 export interface AppStoreState {
   activeDataset: ActiveDatasetState;
   dataQuality: DataQualityState;
@@ -111,6 +118,7 @@ export interface AppStoreState {
   leadingIndicatorsStream: LeadingIndicatorsStreamState;
   visualStandardizer: VisualStandardizerState;
   visualStandardizerUi: VisualStandardizerUiState;
+  visualStandardizerSession: VisualStandardizerSessionState;
   setActiveDataset: (updates: Partial<ActiveDatasetState>) => void;
   setDatasetColumns: (columns: string[]) => void;
   resetActiveDataset: () => void;
@@ -126,6 +134,7 @@ export interface AppStoreState {
   dismissLeadingIndicatorsToast: () => void;
   setVisualStandardizer: (updates: Partial<VisualStandardizerState>) => void;
   setVisualStandardizerUi: (updates: Partial<VisualStandardizerUiState>) => void;
+  setVisualStandardizerSession: (updates: Partial<VisualStandardizerSessionState>) => void;
   resetAppState: () => void;
 }
 
@@ -216,6 +225,12 @@ const initialState = {
     recentError: null,
     cleanedCode: '',
     chartCode: '',
+  },
+  visualStandardizerSession: {
+    file: null,
+    fileId: null,
+    originalFilename: null,
+    columns: [],
   },
 } as const;
 
@@ -316,6 +331,13 @@ export const useAppStore = create<AppStoreState>()(
         set((state) => ({
           visualStandardizerUi: {
             ...state.visualStandardizerUi,
+            ...updates,
+          },
+        })),
+      setVisualStandardizerSession: (updates) =>
+        set((state) => ({
+          visualStandardizerSession: {
+            ...state.visualStandardizerSession,
             ...updates,
           },
         })),
