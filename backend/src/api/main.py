@@ -60,6 +60,7 @@ app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(dq.router, prefix="/api/dq", tags=["Data Quality"])
 app.include_router(vs.router, prefix="/api/vs", tags=["Visual Standardizer"])
 app.include_router(li.router, prefix="/api/li", tags=["Leading Indicators"])
+app.include_router(li.stream_router, prefix="/api", tags=["Leading Indicators"])
 app.include_router(llm.router, prefix="/api/llm", tags=["LLM"])
 
 

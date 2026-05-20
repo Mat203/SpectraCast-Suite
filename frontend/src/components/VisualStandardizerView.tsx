@@ -1,11 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { ChartActionButtons } from './ChartActionButtons.tsx';
 import { apiFetch, downloadFile, fetchBlobUrl } from '../lib/api';
+import { useHybridCompute } from '../lib/useHybridCompute';
+import { useComputeMode } from '../lib/ComputeModeContext.jsx';
+import { LOCAL_VS_PLOT_CODE, LOCAL_VS_STANDARDIZE_CODE } from '../lib/localComputeScripts';
+import { useAppStore } from '../store/useAppStore';
+import type { AppStoreState } from '../store/useAppStore';
 
 type Tab = 'plot_generator' | 'code_standardizer' | 'style_creator';
+
+type YAxisAssignment = {
+  column: string;
+  axis: 'primary' | 'secondary';
+};
 
 interface GeneratePlotResponse {
   status: string;
   plot_filename: string;
+  source_code?: string;
 }
 
 interface RecentDataset {
@@ -15,30 +27,192 @@ interface RecentDataset {
 }
 
 export const VisualStandardizerView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('plot_generator');
-  const [styles, setStyles] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const activeDataset = useAppStore((state: AppStoreState) => state.activeDataset) as AppStoreState['activeDataset'];
+  const setActiveDataset = useAppStore((state: AppStoreState) => state.setActiveDataset) as AppStoreState['setActiveDataset'];
+  const setDatasetColumns = useAppStore((state: AppStoreState) => state.setDatasetColumns) as AppStoreState['setDatasetColumns'];
+  const visualStandardizer = useAppStore((state: AppStoreState) => state.visualStandardizer) as AppStoreState['visualStandardizer'];
+  const setVisualStandardizer = useAppStore((state: AppStoreState) => state.setVisualStandardizer) as AppStoreState['setVisualStandardizer'];
+  const visualStandardizerUi = useAppStore((state: AppStoreState) => state.visualStandardizerUi) as AppStoreState['visualStandardizerUi'];
+  const setVisualStandardizerUi = useAppStore((state: AppStoreState) => state.setVisualStandardizerUi) as AppStoreState['setVisualStandardizerUi'];
+  const visualStandardizerSession = useAppStore((state: AppStoreState) => state.visualStandardizerSession) as AppStoreState['visualStandardizerSession'];
+  const setVisualStandardizerSession = useAppStore((state: AppStoreState) => state.setVisualStandardizerSession) as AppStoreState['setVisualStandardizerSession'];
 
-  const [file, setFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [columns, setColumns] = useState<string[]>([]);
-  const [xAxis, setXAxis] = useState<string>('');
-  const [yAxis, setYAxis] = useState<string>('');
-  const [plotType, setPlotType] = useState<string>('line');
-  const [selectedStyle, setSelectedStyle] = useState<string>('');
-  const [outputFilename, setOutputFilename] = useState<string>('plot.png');
-  const [plotResult, setPlotResult] = useState<GeneratePlotResponse | null>(null);
+  const { isLocalMode, setIsLocalMode } = useComputeMode() as {
+    isLocalMode: boolean;
+    setIsLocalMode: (value: boolean) => void;
+  };
+  const { execute: executeHybrid } = useHybridCompute();
+
+  const localCsvRef = useRef<string | null>(null);
+
+  const { file, fileId, columns } = activeDataset;
+  const {
+    activeTab,
+    xAxis,
+    yAxes,
+    plotType,
+    selectedStyle,
+    outputFilename,
+    codeStyle,
+    rawCode,
+  } = visualStandardizer;
+
+  const normalizeYAxes = (value: unknown): YAxisAssignment[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const mapped = value
+      .map((item) => {
+        if (typeof item === 'string') {
+          return { column: item, axis: 'primary' as const };
+        }
+        if (item && typeof item === 'object') {
+          const column = (item as { column?: unknown }).column;
+          if (typeof column !== 'string' || !column) {
+            return null;
+          }
+          const axisValue = (item as { axis?: unknown }).axis;
+          const axis = axisValue === 'secondary' ? 'secondary' : 'primary';
+          return { column, axis } as YAxisAssignment;
+        }
+        return null;
+      })
+      .filter((item): item is YAxisAssignment => Boolean(item));
+
+    const seen = new Set<string>();
+    return mapped.filter((item) => {
+      if (seen.has(item.column)) {
+        return false;
+      }
+      seen.add(item.column);
+      return true;
+    });
+  };
+
+  const resolvedYAxes = normalizeYAxes(yAxes);
+
+  const setActiveTab = (value: Tab) => setVisualStandardizer({ activeTab: value });
+  const setXAxis = (value: string) => setVisualStandardizer({ xAxis: value });
+  const setYAxes = (value: YAxisAssignment[]) => setVisualStandardizer({ yAxes: value });
+  const setPlotType = (value: string) => setVisualStandardizer({ plotType: value });
+  const setSelectedStyle = (value: string) => setVisualStandardizer({ selectedStyle: value });
+  const setOutputFilename = (value: string) => setVisualStandardizer({ outputFilename: value });
+  const setCodeStyle = (value: string) => setVisualStandardizer({ codeStyle: value });
+  const setRawCode = (value: string) => setVisualStandardizer({ rawCode: value });
+
+  const toggleYAxis = (value: string) => {
+    if (!value) {
+      return;
+    }
+
+    const existing = resolvedYAxes.find((axis) => axis.column === value);
+    if (existing) {
+      setYAxes(resolvedYAxes.filter((axis) => axis.column !== value));
+      return;
+    }
+
+    setYAxes([...resolvedYAxes, { column: value, axis: 'primary' }]);
+  };
+
+  const setAxisForColumn = (column: string, axis: 'primary' | 'secondary') => {
+    if (!column) {
+      return;
+    }
+
+    const existing = resolvedYAxes.find((item) => item.column === column);
+    if (!existing) {
+      setYAxes([...resolvedYAxes, { column, axis }]);
+      return;
+    }
+
+    setYAxes(
+      resolvedYAxes.map((item) =>
+        item.column === column ? { ...item, axis } : item,
+      ),
+    );
+  };
+
+  const getAxisForColumn = (column: string) =>
+    resolvedYAxes.find((item) => item.column === column)?.axis;
+
+  const areYAxesEqual = (left: YAxisAssignment[], right: YAxisAssignment[]) =>
+    left.length === right.length &&
+    left.every((item, index) =>
+      item.column === right[index]?.column && item.axis === right[index]?.axis,
+    );
+
+  useEffect(() => {
+    if (!Array.isArray(yAxes)) {
+      setYAxes([]);
+      return;
+    }
+
+    if (!areYAxesEqual(resolvedYAxes, yAxes as YAxisAssignment[])) {
+      setYAxes(resolvedYAxes);
+    }
+  }, [yAxes, resolvedYAxes, setYAxes]);
+
+  const {
+    isDragging,
+    isLoading,
+    error,
+    styles,
+    plotResult: plotResultState,
+    recentDatasets: recentDatasetsState,
+    isLoadingRecent,
+    recentError,
+    cleanedCode,
+    chartCode,
+  } = visualStandardizerUi;
+
+  const plotResult = plotResultState as GeneratePlotResponse | null;
+  const recentDatasets = recentDatasetsState as RecentDataset[];
+
+  const setIsDragging = (value: boolean) => setVisualStandardizerUi({ isDragging: value });
+  const setIsLoading = (value: boolean) => setVisualStandardizerUi({ isLoading: value });
+  const setError = (value: string | null) => setVisualStandardizerUi({ error: value });
+  const setStyles = (value: string[]) => setVisualStandardizerUi({ styles: value });
+  const setPlotResult = (value: GeneratePlotResponse | null) => setVisualStandardizerUi({ plotResult: value });
+  const setRecentDatasets = (value: RecentDataset[]) => setVisualStandardizerUi({ recentDatasets: value });
+  const setIsLoadingRecent = (value: boolean) => setVisualStandardizerUi({ isLoadingRecent: value });
+  const setRecentError = (value: string | null) => setVisualStandardizerUi({ recentError: value });
+  const setCleanedCode = (value: string) => setVisualStandardizerUi({ cleanedCode: value });
+  const setChartCode = (value: string) => setVisualStandardizerUi({ chartCode: value });
+
   const [plotPreviewUrl, setPlotPreviewUrl] = useState<string | null>(null);
+  const [localPlotBase64, setLocalPlotBase64] = useState<string | null>(null);
+  const [isPlotFullScreen, setIsPlotFullScreen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
-  const [recentDatasets, setRecentDatasets] = useState<RecentDataset[]>([]);
-  const [isLoadingRecent, setIsLoadingRecent] = useState(false);
-  const [recentError, setRecentError] = useState<string | null>(null);
 
-  const [rawCode, setRawCode] = useState<string>('');
-  const [codeStyle, setCodeStyle] = useState<string>('');
-  const [cleanedCode, setCleanedCode] = useState<string>('');
+  const ensureLocalCsv = async () => {
+    if (localCsvRef.current) {
+      return localCsvRef.current;
+    }
+    if (!file) {
+      throw new Error('Please upload a CSV file first.');
+    }
+    const csvData = await file.text();
+    localCsvRef.current = csvData;
+    return csvData;
+  };
+
+  const resolvePlotFilename = () => {
+    const trimmed = outputFilename.trim();
+    if (!trimmed) {
+      return 'plot.png';
+    }
+    return trimmed.toLowerCase().endsWith('.png') ? trimmed : `${trimmed}.png`;
+  };
+
+  const downloadBase64Image = (base64: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = `data:image/png;base64,${base64}`;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
 
   useEffect(() => {
     const fetchStyles = async () => {
@@ -52,8 +226,13 @@ export const VisualStandardizerView: React.FC = () => {
         const data = await res.json();
         setStyles(data.styles || []);
         if (data.styles && data.styles.length > 0) {
-          setSelectedStyle(data.styles[0]);
-          setCodeStyle(data.styles[0]);
+          const current = useAppStore.getState().visualStandardizer;
+          if (!current.selectedStyle) {
+            setVisualStandardizer({ selectedStyle: data.styles[0] });
+          }
+          if (!current.codeStyle) {
+            setVisualStandardizer({ codeStyle: data.styles[0] });
+          }
         }
       } catch (err) {
         if (err instanceof Error) {
@@ -66,7 +245,37 @@ export const VisualStandardizerView: React.FC = () => {
       }
     };
     fetchStyles();
-  }, []);
+  }, [setVisualStandardizer]);
+
+  useEffect(() => {
+    if (!columns.length) {
+      return;
+    }
+
+    const shouldResetXAxis = !xAxis || !columns.includes(xAxis);
+    const normalizedYAxes = resolvedYAxes.filter((axis) => columns.includes(axis.column));
+    const shouldResetYAxis = normalizedYAxes.length === 0;
+
+    if (shouldResetXAxis || shouldResetYAxis || normalizedYAxes.length !== resolvedYAxes.length) {
+      const nextXAxis = columns[0] ?? '';
+      const fallbackYAxis = columns[1] ?? columns[0] ?? '';
+      const updates: { xAxis?: string; yAxes?: YAxisAssignment[] } = {};
+
+      if (shouldResetXAxis) {
+        updates.xAxis = nextXAxis;
+      }
+
+      if (shouldResetYAxis) {
+        updates.yAxes = fallbackYAxis ? [{ column: fallbackYAxis, axis: 'primary' }] : [];
+      } else if (normalizedYAxes.length !== resolvedYAxes.length) {
+        updates.yAxes = normalizedYAxes;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        setVisualStandardizer(updates);
+      }
+    }
+  }, [columns, xAxis, resolvedYAxes, yAxes, setVisualStandardizer]);
 
   useEffect(() => {
     let isActive = true;
@@ -111,6 +320,16 @@ export const VisualStandardizerView: React.FC = () => {
       return;
     }
 
+    if (localPlotBase64) {
+      setPlotPreviewUrl(`data:image/png;base64,${localPlotBase64}`);
+      return;
+    }
+
+    if (isLocalMode) {
+      setPlotPreviewUrl(null);
+      return;
+    }
+
     let isActive = true;
 
     const loadPreview = async () => {
@@ -131,11 +350,11 @@ export const VisualStandardizerView: React.FC = () => {
     return () => {
       isActive = false;
     };
-  }, [plotResult]);
+  }, [plotResult, isLocalMode, localPlotBase64]);
 
   useEffect(() => {
     return () => {
-      if (plotPreviewUrl) {
+      if (plotPreviewUrl && plotPreviewUrl.startsWith('blob:')) {
         URL.revokeObjectURL(plotPreviewUrl);
       }
     };
@@ -163,28 +382,61 @@ export const VisualStandardizerView: React.FC = () => {
         .map((header) => header.trim().replace(/^"|"$/g, ''))
         .filter(Boolean);
 
-      setColumns(parsedHeaders);
+      setDatasetColumns(parsedHeaders);
+      setVisualStandardizerSession({ columns: parsedHeaders });
       if (parsedHeaders.length >= 2) {
         setXAxis(parsedHeaders[0]);
-        setYAxis(parsedHeaders[1]);
+        setYAxes([{ column: parsedHeaders[1], axis: 'primary' }]);
       } else if (parsedHeaders.length === 1) {
         setXAxis(parsedHeaders[0]);
-        setYAxis(parsedHeaders[0]);
+        setYAxes([{ column: parsedHeaders[0], axis: 'primary' }]);
       } else {
         setXAxis('');
-        setYAxis('');
+        setYAxes([]);
       }
     };
 
     reader.onerror = () => {
       setError('Could not read CSV headers. Try another file.');
-      setColumns([]);
+      setDatasetColumns([]);
+      setVisualStandardizerSession({ columns: [] });
       setXAxis('');
-      setYAxis('');
+      setYAxes([]);
     };
 
     reader.readAsText(nextFile.slice(0, 1024));
   };
+
+  useEffect(() => {
+    if (!visualStandardizerSession.file) {
+      return;
+    }
+
+    if (file === visualStandardizerSession.file) {
+      return;
+    }
+
+    setActiveDataset({
+      file: visualStandardizerSession.file,
+      fileId: visualStandardizerSession.fileId,
+      originalFilename: visualStandardizerSession.originalFilename,
+      columns: visualStandardizerSession.columns,
+    });
+
+    if (visualStandardizerSession.columns.length > 0) {
+      setDatasetColumns(visualStandardizerSession.columns);
+    } else {
+      parseColumnsFromFile(visualStandardizerSession.file);
+    }
+  }, [
+    file,
+    visualStandardizerSession.file,
+    visualStandardizerSession.fileId,
+    visualStandardizerSession.originalFilename,
+    visualStandardizerSession.columns,
+    setActiveDataset,
+    setDatasetColumns,
+  ]);
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -193,9 +445,24 @@ export const VisualStandardizerView: React.FC = () => {
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const droppedFile = e.dataTransfer.files[0];
       if (droppedFile.name.endsWith('.csv')) {
-        setFile(droppedFile);
-        setSelectedDatasetId(null);
+        setActiveDataset({
+          file: droppedFile,
+          fileId: null,
+          originalFilename: droppedFile.name,
+          columns: [],
+        });
+        setVisualStandardizerSession({
+          file: droppedFile,
+          fileId: null,
+          originalFilename: droppedFile.name,
+          columns: [],
+        });
         parseColumnsFromFile(droppedFile);
+        localCsvRef.current = null;
+        setLocalPlotBase64(null);
+        setPlotPreviewUrl(null);
+        setPlotResult(null);
+        setChartCode('');
       } else {
         alert('Please upload a .csv file');
       }
@@ -205,9 +472,24 @@ export const VisualStandardizerView: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFile = e.target.files[0];
-      setFile(selectedFile);
-      setSelectedDatasetId(null);
+      setActiveDataset({
+        file: selectedFile,
+        fileId: null,
+        originalFilename: selectedFile.name,
+        columns: [],
+      });
+      setVisualStandardizerSession({
+        file: selectedFile,
+        fileId: null,
+        originalFilename: selectedFile.name,
+        columns: [],
+      });
       parseColumnsFromFile(selectedFile);
+      localCsvRef.current = null;
+      setLocalPlotBase64(null);
+      setPlotPreviewUrl(null);
+      setPlotResult(null);
+      setChartCode('');
     }
   };
 
@@ -215,6 +497,10 @@ export const VisualStandardizerView: React.FC = () => {
   const handleSelectRecentDataset = async (dataset: RecentDataset) => {
     setError(null);
     setPlotResult(null);
+    setLocalPlotBase64(null);
+    setPlotPreviewUrl(null);
+    setChartCode('');
+    localCsvRef.current = null;
 
     try {
       const response = await apiFetch(`/api/dq/download/${dataset.file_id}`);
@@ -230,8 +516,18 @@ export const VisualStandardizerView: React.FC = () => {
       );
 
       setActiveTab('plot_generator');
-      setFile(restoredFile);
-      setSelectedDatasetId(dataset.file_id);
+      setActiveDataset({
+        file: restoredFile,
+        fileId: dataset.file_id,
+        originalFilename: dataset.original_filename || restoredFile.name,
+        columns: [],
+      });
+      setVisualStandardizerSession({
+        file: restoredFile,
+        fileId: dataset.file_id,
+        originalFilename: dataset.original_filename || restoredFile.name,
+        columns: [],
+      });
       parseColumnsFromFile(restoredFile);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load the selected dataset');
@@ -243,7 +539,7 @@ export const VisualStandardizerView: React.FC = () => {
   };
 
   const handleGeneratePlot = async () => {
-    if (!file || !xAxis || !yAxis || !selectedStyle || !outputFilename) {
+    if (!file || !xAxis || resolvedYAxes.length === 0 || !selectedStyle || !outputFilename) {
       setError("Please fill all fields for plot generation");
       return;
     }
@@ -251,11 +547,46 @@ export const VisualStandardizerView: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setPlotResult(null);
+    setLocalPlotBase64(null);
+    setChartCode('');
+
+    const chartType = plotType === 'bar' || plotType === 'hist'
+      ? '2'
+      : plotType === 'scatter'
+        ? '3'
+        : '1';
 
     try {
-      let fileId = selectedDatasetId;
+      if (isLocalMode) {
+        const csvData = await ensureLocalCsv();
+        const localResult = await executeHybrid(
+          null,
+          {
+            csvData,
+            x_col: xAxis,
+            y_axes: resolvedYAxes,
+            chart_type: chartType,
+          },
+          { code: LOCAL_VS_PLOT_CODE, packages: ['matplotlib'] },
+        );
 
-      if (!fileId) {
+        const imageBase64 = localResult?.image_base64 as string | undefined;
+        if (!imageBase64) {
+          throw new Error('Local plot generation failed');
+        }
+
+        setLocalPlotBase64(imageBase64);
+        setPlotPreviewUrl(`data:image/png;base64,${imageBase64}`);
+        setPlotResult({ status: 'success', plot_filename: resolvePlotFilename() });
+        if (localResult?.source_code) {
+          setChartCode(localResult.source_code as string);
+        }
+        return;
+      }
+
+      let fileIdToUse = fileId;
+
+      if (!fileIdToUse) {
         const formData = new FormData();
         formData.append('file', file);
 
@@ -266,7 +597,15 @@ export const VisualStandardizerView: React.FC = () => {
 
         if (!uploadRes.ok) throw new Error('File upload failed');
         const uploadData = await uploadRes.json();
-        fileId = uploadData.file_id;
+        fileIdToUse = uploadData.file_id;
+        setActiveDataset({
+          fileId: fileIdToUse,
+          originalFilename: file?.name || null,
+        });
+        setVisualStandardizerSession({
+          fileId: fileIdToUse,
+          originalFilename: file?.name || null,
+        });
       }
 
       const generateRes = await apiFetch('/api/vs/generate', {
@@ -275,11 +614,11 @@ export const VisualStandardizerView: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          file_id: fileId,
+          file_id: fileIdToUse,
           style_name: selectedStyle,
           x: xAxis,
-          y: yAxis,
-          plot_type: plotType,
+          y_axes: resolvedYAxes,
+          chart_type: chartType,
           output_filename: outputFilename
         }),
       });
@@ -288,6 +627,7 @@ export const VisualStandardizerView: React.FC = () => {
       const generateData = await generateRes.json();
       setPlotPreviewUrl(null);
       setPlotResult(generateData);
+      setChartCode(generateData.source_code || '');
 
     } catch (err) {
       if (err instanceof Error) {
@@ -311,6 +651,19 @@ export const VisualStandardizerView: React.FC = () => {
     setCleanedCode('');
 
     try {
+      if (isLocalMode) {
+        const localResult = await executeHybrid(
+          null,
+          { raw_code: rawCode, style_name: codeStyle },
+          { code: LOCAL_VS_STANDARDIZE_CODE },
+        );
+        if (localResult?.status === 'error' && localResult?.message) {
+          setError(localResult.message as string);
+        }
+        setCleanedCode((localResult?.cleaned_code as string) || '');
+        return;
+      }
+
       const res = await apiFetch('/api/vs/standardize-code', {
         method: 'POST',
         headers: {
@@ -352,6 +705,10 @@ export const VisualStandardizerView: React.FC = () => {
     setError(null);
 
     try {
+      if (localPlotBase64) {
+        downloadBase64Image(localPlotBase64, resolvePlotFilename());
+        return;
+      }
       await downloadFile(`/api/vs/download/${plotResult.plot_filename}`, plotResult.plot_filename);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed.');
@@ -366,7 +723,6 @@ export const VisualStandardizerView: React.FC = () => {
       </header>
 
       <div className="px-8 py-6 max-w-6xl mx-auto">
-        {/* Tabs */}
         <div className="flex border-b border-slate-200 mb-6">
           <button
             className={`py-3 px-6 font-medium text-sm border-b-2 transition-colors ${
@@ -402,7 +758,16 @@ export const VisualStandardizerView: React.FC = () => {
 
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
-            {error}
+            <p>{error}</p>
+            {isLocalMode && (
+              <button
+                type="button"
+                onClick={() => setIsLocalMode(false)}
+                className="mt-2 inline-flex items-center rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+              >
+                Run via API
+              </button>
+            )}
           </div>
         )}
 
@@ -441,60 +806,125 @@ export const VisualStandardizerView: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">X-Axis</label>
-                      <select
-                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        value={xAxis}
-                        onChange={(e) => setXAxis(e.target.value)}
-                      >
-                        <option value="">Select column...</option>
-                        {columns.map((col) => (
-                          <option key={col} value={col}>{col}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          value={xAxis}
+                          onChange={(e) => setXAxis(e.target.value)}
+                        >
+                          <option value="">Select column...</option>
+                          {columns.map((col) => (
+                            <option key={col} value={col}>{col}</option>
+                          ))}
+                        </select>
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                          </svg>
+                        </span>
+                      </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">Y-Axis</label>
-                      <select
-                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        value={yAxis}
-                        onChange={(e) => setYAxis(e.target.value)}
-                      >
-                        <option value="">Select column...</option>
-                        {columns.map((col) => (
-                          <option key={col} value={col}>{col}</option>
-                        ))}
-                      </select>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Y-Axis (Multi-select)</label>
+                      <div className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm max-h-40 overflow-y-auto">
+                        {columns.length === 0 && (
+                          <p className="text-slate-500">Upload a dataset to pick columns.</p>
+                        )}
+                        {columns.length > 0 && (
+                          <div className="space-y-3">
+                            {columns.map((col) => {
+                              const axis = getAxisForColumn(col);
+                              const isSelected = Boolean(axis);
+
+                              return (
+                                <div key={col} className="flex min-h-[36px] items-center justify-between gap-3">
+                                  <label className="flex items-center gap-2 text-slate-700">
+                                    <input
+                                      type="checkbox"
+                                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                      checked={isSelected}
+                                      onChange={() => toggleYAxis(col)}
+                                    />
+                                    <span className="truncate" title={col}>{col}</span>
+                                  </label>
+                                  {isSelected && (
+                                    <div className="flex items-center rounded-full border border-slate-200 bg-slate-100 p-0.5 text-xs">
+                                      <button
+                                        type="button"
+                                        onClick={() => setAxisForColumn(col, 'primary')}
+                                        className={`rounded-full border border-slate-200 px-2 py-0.5 font-medium transition hover:cursor-pointer ${
+                                          axis === 'primary'
+                                            ? 'bg-white text-slate-900 shadow-sm'
+                                            : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                      >
+                                        P
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setAxisForColumn(col, 'secondary')}
+                                        className={`rounded-full border border-slate-200 px-2 py-0.5 font-medium transition hover:cursor-pointer ${
+                                          axis === 'secondary'
+                                            ? 'bg-white text-slate-900 shadow-sm'
+                                            : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                      >
+                                        S
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">Assign each selected column to the primary or secondary axis.</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">Plot Type</label>
-                      <select
-                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        value={plotType}
-                        onChange={(e) => setPlotType(e.target.value)}
-                      >
-                        <option value="line">Line</option>
-                        <option value="scatter">Scatter</option>
-                        <option value="bar">Bar</option>
-                        <option value="hist">Histogram</option>
-                      </select>
+                      <div className="relative">
+                        <select
+                          className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          value={plotType}
+                          onChange={(e) => setPlotType(e.target.value)}
+                        >
+                          <option value="line">Line</option>
+                          <option value="scatter">Scatter</option>
+                          <option value="bar">Bar</option>
+                          <option value="hist">Histogram</option>
+                        </select>
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                          </svg>
+                        </span>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">Style</label>
-                      <select
-                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        value={selectedStyle}
-                        onChange={(e) => setSelectedStyle(e.target.value)}
-                      >
-                        {styles.map((style) => (
-                          <option key={style} value={style}>{style}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          value={selectedStyle}
+                          onChange={(e) => setSelectedStyle(e.target.value)}
+                        >
+                          {styles.map((style) => (
+                            <option key={style} value={style}>{style}</option>
+                          ))}
+                        </select>
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                          </svg>
+                        </span>
+                      </div>
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-slate-700 mb-2">Output Filename</label>
                       <input
                         type="text"
-                        className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                         value={outputFilename}
                         onChange={(e) => setOutputFilename(e.target.value)}
                       />
@@ -538,7 +968,7 @@ export const VisualStandardizerView: React.FC = () => {
                   )}
 
                   {!isLoadingRecent && recentDatasets.length > 0 && (
-                    <div className="mt-4 flex-1 max-h-102 space-y-2 overflow-y-auto pr-1">
+                    <div className="mt-4 flex-1 max-h-135 space-y-2 overflow-y-auto pr-1">
                       {recentDatasets.map((dataset) => (
                         <button
                           key={dataset.file_id}
@@ -577,16 +1007,24 @@ export const VisualStandardizerView: React.FC = () => {
                  <div className="mt-6 bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
                     <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center">
                       <h4 className="text-slate-800 font-medium">Generated Plot Preview</h4>
-                      <button
-                        type="button"
-                        onClick={handleDownloadPlot}
-                        className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center gap-1"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                        Download Image
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setIsPlotFullScreen(true)}
+                          disabled={!plotPreviewUrl}
+                          className="text-slate-600 hover:text-slate-800 text-sm font-medium border border-slate-200 rounded-full px-3 py-1 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                        >
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+                          </svg>
+                          Full Screen
+                        </button>
+                        <ChartActionButtons
+                          onDownload={handleDownloadPlot}
+                          isDownloadDisabled={isLoading || !plotResult?.plot_filename}
+                          chartCode={chartCode}
+                        />
+                      </div>
                     </div>
                     <div className="p-4 bg-slate-50 flex justify-center custom-plot-preview">
                       {plotPreviewUrl ? (
@@ -604,6 +1042,38 @@ export const VisualStandardizerView: React.FC = () => {
                     </div>
                  </div>
               )}
+
+                {isPlotFullScreen && plotPreviewUrl && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 sm:p-6">
+                    <button
+                      type="button"
+                      onClick={() => setIsPlotFullScreen(false)}
+                      className="absolute inset-0 cursor-default"
+                      aria-label="Close full screen preview"
+                    />
+                    <div className="relative z-10 w-full max-w-7xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+                      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+                        <h5 className="text-sm font-semibold text-slate-800">Plot Preview</h5>
+                        <button
+                          type="button"
+                          onClick={() => setIsPlotFullScreen(false)}
+                          className="rounded-full border border-slate-200 p-2 text-slate-600 hover:bg-slate-100 hover:cursor-pointer"
+                        >
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6l-12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-center bg-slate-50 p-4">
+                        <img
+                          src={plotPreviewUrl}
+                          alt="Generated Plot"
+                          className="max-h-[85vh] w-auto rounded-lg border border-slate-200 shadow-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
             </div>
           )}
@@ -623,15 +1093,22 @@ export const VisualStandardizerView: React.FC = () => {
                <div className="flex items-end gap-4">
                   <div className="flex-1">
                     <label className="block text-sm font-medium text-slate-700 mb-2">Target Style</label>
-                    <select
-                      className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                      value={codeStyle}
-                      onChange={(e) => setCodeStyle(e.target.value)}
-                    >
-                      {styles.map((style) => (
-                        <option key={style} value={style}>{style}</option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <select
+                        className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                        value={codeStyle}
+                        onChange={(e) => setCodeStyle(e.target.value)}
+                      >
+                        {styles.map((style) => (
+                          <option key={style} value={style}>{style}</option>
+                        ))}
+                      </select>
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                        </svg>
+                      </span>
+                    </div>
                   </div>
                   <button
                     onClick={handleStandardizeCode}

@@ -2,7 +2,7 @@ import os
 import time
 import serpapi
 import pandas as pd
-import numpy as np
+import requests
 from typing import List
 from dotenv import load_dotenv
 
@@ -11,18 +11,9 @@ load_dotenv()
 class TrendsFetcher:
     def __init__(self, api_key: str = None):
         self.api_key = api_key or os.getenv("SERPAPI_KEY")
-        
         self.client = serpapi.Client(api_key=self.api_key)
-
-    def _generate_mock_data(self, queries: List[str]) -> pd.DataFrame:
-
-        print(f"Використовується заглушка (Mock Data) для: {queries}")
-        dates = pd.date_range(end=pd.Timestamp.today(), periods=260, freq='W')
-        mock_dict = {'date': dates}
-        for q in queries:
-            mock_dict[q] = np.random.randint(0, 101, size=len(dates))
-            
-        return pd.DataFrame(mock_dict).set_index('date')
+        self.base_url = "https://serpapi.com/search"
+        self.timeout_seconds = 10
 
     def fetch_data(self, queries: List[str], geo_code: str, timeframe: str = 'today 5-y') -> pd.DataFrame:
         all_data = pd.DataFrame()
@@ -36,13 +27,22 @@ class TrendsFetcher:
             q_string = ",".join(chunk)
             
             try:
-                results = self.client.search({
-                    "engine": "google_trends",
-                    "q": q_string,
-                    "geo": geo_code,
-                    "date": timeframe,
-                    "data_type": "TIMESERIES"
-                })
+                response = requests.get(
+                    self.base_url,
+                    params={
+                        "engine": "google_trends",
+                        "q": q_string,
+                        "geo": geo_code,
+                        "date": timeframe,
+                        "data_type": "TIMESERIES",
+                        "api_key": self.api_key,
+                    },
+                    timeout=self.timeout_seconds,
+                )
+                if not response.ok:
+                    raise RuntimeError(f"SerpAPI returned HTTP {response.status_code}")
+
+                results = response.json()
                 
                 interest_data = results.get("interest_over_time", {}).get("timeline_data", [])
                 
@@ -61,14 +61,12 @@ class TrendsFetcher:
                         df_chunk = df_chunk.set_index("date")
                         all_data = df_chunk if all_data.empty else all_data.join(df_chunk, how='outer')
                 else:
-                    print(f"  [!] SerpAPI не повернув даних для: {chunk}. Перехід на заглушку.")
-                    df_mock = self._generate_mock_data(chunk)
-                    all_data = df_mock if all_data.empty else all_data.join(df_mock, how='outer')
+                    print(f"  [!] SerpAPI не повернув даних для: {chunk}. Пропускаємо.")
 
+            except requests.Timeout:
+                print(f"  [!] SerpAPI timeout ({self.timeout_seconds}s) for: {chunk}. Пропускаємо.")
             except Exception as e:
-                print(f"  [!] Помилка SerpAPI: {e}. Перехід на заглушку.")
-                df_mock = self._generate_mock_data(chunk)
-                all_data = df_mock if all_data.empty else all_data.join(df_mock, how='outer')
+                print(f"  [!] Помилка SerpAPI: {e}. Пропускаємо.")
 
             if i < len(query_chunks):
                 time.sleep(5)

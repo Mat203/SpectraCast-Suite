@@ -4,6 +4,18 @@ import { STRATEGY_DESCRIPTIONS } from '../lib/outlierStrategies';
 import type { OutlierStrategyKey } from '../lib/outlierStrategies';
 import { MISSING_VALUES_DESCRIPTIONS } from '../lib/missingValueStrategies';
 import type { MissingStrategyKey } from '../lib/missingValueStrategies';
+import { useAppStore } from '../store/useAppStore';
+import type { AppStoreState } from '../store/useAppStore';
+import { useHybridCompute } from '../lib/useHybridCompute';
+import { useComputeMode } from '../lib/ComputeModeContext.jsx';
+import {
+  LOCAL_DQ_FIX_TIMESTAMPS_CODE,
+  LOCAL_DQ_HANDLE_MISSING_CODE,
+  LOCAL_DQ_HANDLE_OUTLIERS_CODE,
+  LOCAL_DQ_PREVIEW_MISSING_CODE,
+  LOCAL_DQ_PREVIEW_OUTLIERS_CODE,
+  LOCAL_DQ_SCAN_CODE,
+} from '../lib/localComputeScripts';
 
 interface UploadResponse {
   status: string;
@@ -84,43 +96,97 @@ export const DataQualityView: React.FC = () => {
       {message}
     </div>
   );
-  const [file, setFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<ScanReport | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [isFixingTimestamps, setIsFixingTimestamps] = useState(false);
-  const [isUndoing, setIsUndoing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [originalFilename, setOriginalFilename] = useState<string | null>(null);
+  const activeDataset = useAppStore((state: AppStoreState) => state.activeDataset) as AppStoreState['activeDataset'];
+  const setActiveDataset = useAppStore((state: AppStoreState) => state.setActiveDataset) as AppStoreState['setActiveDataset'];
+  const setDatasetColumns = useAppStore((state: AppStoreState) => state.setDatasetColumns) as AppStoreState['setDatasetColumns'];
+  const dataQuality = useAppStore((state: AppStoreState) => state.dataQuality) as AppStoreState['dataQuality'];
+  const setDataQuality = useAppStore((state: AppStoreState) => state.setDataQuality) as AppStoreState['setDataQuality'];
+  const dataQualityUi = useAppStore((state: AppStoreState) => state.dataQualityUi) as AppStoreState['dataQualityUi'];
+  const setDataQualityUi = useAppStore((state: AppStoreState) => state.setDataQualityUi) as AppStoreState['setDataQualityUi'];
 
-  const [selectedOutlierCol, setSelectedOutlierCol] = useState<string | null>(null);
-  const [isOutlierModalOpen, setIsOutlierModalOpen] = useState(false);
-  const [outlierStrategy, setOutlierStrategy] = useState<OutlierStrategyKey>('clip_iqr');
-  const [strategyPreview, setStrategyPreview] = useState<OutlierStrategyKey>('clip_iqr');
-  const [isStrategyPanelVisible, setIsStrategyPanelVisible] = useState(false);
-  const [isProcessingAction, setIsProcessingAction] = useState(false);
-  const [previewData, setPreviewData] = useState<OutlierPreviewResponse | null>(null);
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const { isLocalMode, setIsLocalMode } = useComputeMode() as {
+    isLocalMode: boolean;
+    setIsLocalMode: (value: boolean) => void;
+  };
+  const { execute: executeHybrid } = useHybridCompute();
 
-  const [selectedMissingCol, setSelectedMissingCol] = useState<string | null>(null);
-  const [isMissingModalOpen, setIsMissingModalOpen] = useState(false);
-  const [missingStrategy, setMissingStrategy] = useState<MissingStrategyKey>('3'); // Default: Forward Fill
-  const [missingStrategyPreview, setMissingStrategyPreview] = useState<MissingStrategyKey>('3');
-  const [isMissingPanelVisible, setIsMissingPanelVisible] = useState(false);
-  const [missingPreviewData, setMissingPreviewData] = useState<MissingPreviewResponse | null>(null);
-  const [isMissingPreviewLoading, setIsMissingPreviewLoading] = useState(false);
-  const [missingPreviewError, setMissingPreviewError] = useState<string | null>(null);
+  const localCsvRef = useRef<string | null>(null);
+  const localPreviousCsvRef = useRef<string | null>(null);
+  const localFileIdRef = useRef<string>('local-dataset');
 
-  const [fileId, setFileId] = useState<string | null>(null);
+  const { file, fileId, originalFilename } = activeDataset;
+  const {
+    selectedOutlierCol,
+    outlierStrategy,
+    strategyPreview,
+    isStrategyPanelVisible,
+    selectedMissingCol,
+    missingStrategy,
+    missingStrategyPreview,
+    isMissingPanelVisible,
+  } = dataQuality;
 
-  const [recentDatasets, setRecentDatasets] = useState<RecentDataset[]>([]);
-  const [isLoadingRecent, setIsLoadingRecent] = useState(false);
-  const [recentError, setRecentError] = useState<string | null>(null);
+  const setSelectedOutlierCol = (value: string | null) => setDataQuality({ selectedOutlierCol: value });
+  const setOutlierStrategy = (value: OutlierStrategyKey) => setDataQuality({ outlierStrategy: value });
+  const setStrategyPreview = (value: OutlierStrategyKey) => setDataQuality({ strategyPreview: value });
+  const setIsStrategyPanelVisible = (value: boolean) => setDataQuality({ isStrategyPanelVisible: value });
+  const setSelectedMissingCol = (value: string | null) => setDataQuality({ selectedMissingCol: value });
+  const setMissingStrategy = (value: MissingStrategyKey) => setDataQuality({ missingStrategy: value });
+  const setMissingStrategyPreview = (value: MissingStrategyKey) => setDataQuality({ missingStrategyPreview: value });
+  const setIsMissingPanelVisible = (value: boolean) => setDataQuality({ isMissingPanelVisible: value });
+
+  const {
+    isDragging,
+    isLoading,
+    error,
+    report: reportState,
+    toastMessage,
+    isFixingTimestamps,
+    isUndoing,
+    isSaving,
+    isOutlierModalOpen,
+    isProcessingAction,
+    previewData: previewDataState,
+    isPreviewLoading,
+    previewError,
+    isMissingModalOpen,
+    missingPreviewData: missingPreviewDataState,
+    isMissingPreviewLoading,
+    missingPreviewError,
+    recentDatasets: recentDatasetsState,
+    isLoadingRecent,
+    recentError,
+  } = dataQualityUi;
+
+  const report = reportState as ScanReport | null;
+  const previewData = previewDataState as OutlierPreviewResponse | null;
+  const missingPreviewData = missingPreviewDataState as MissingPreviewResponse | null;
+  const recentDatasets = recentDatasetsState as RecentDataset[];
+
+  const setIsDragging = (value: boolean) => setDataQualityUi({ isDragging: value });
+  const setIsLoading = (value: boolean) => setDataQualityUi({ isLoading: value });
+  const setError = (value: string | null) => setDataQualityUi({ error: value });
+  const setReport = (value: ScanReport | null) => setDataQualityUi({ report: value });
+  const setToastMessage = (value: string | null) => setDataQualityUi({ toastMessage: value });
+  const setIsFixingTimestamps = (value: boolean) => setDataQualityUi({ isFixingTimestamps: value });
+  const setIsUndoing = (value: boolean) => setDataQualityUi({ isUndoing: value });
+  const setIsSaving = (value: boolean) => setDataQualityUi({ isSaving: value });
+  const setIsOutlierModalOpen = (value: boolean) => setDataQualityUi({ isOutlierModalOpen: value });
+  const setIsProcessingAction = (value: boolean) => setDataQualityUi({ isProcessingAction: value });
+  const setPreviewData = (value: OutlierPreviewResponse | null) => setDataQualityUi({ previewData: value });
+  const setIsPreviewLoading = (value: boolean) => setDataQualityUi({ isPreviewLoading: value });
+  const setPreviewError = (value: string | null) => setDataQualityUi({ previewError: value });
+  const setIsMissingModalOpen = (value: boolean) => setDataQualityUi({ isMissingModalOpen: value });
+  const setMissingPreviewData = (value: MissingPreviewResponse | null) => setDataQualityUi({ missingPreviewData: value });
+  const setIsMissingPreviewLoading = (value: boolean) => setDataQualityUi({ isMissingPreviewLoading: value });
+  const setMissingPreviewError = (value: string | null) => setDataQualityUi({ missingPreviewError: value });
+  const setRecentDatasets = (value: RecentDataset[]) => setDataQualityUi({ recentDatasets: value });
+  const setIsLoadingRecent = (value: boolean) => setDataQualityUi({ isLoadingRecent: value });
+  const setRecentError = (value: string | null) => setDataQualityUi({ recentError: value });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadPanelRef = useRef<HTMLDivElement>(null);
+  const [previewMaxHeight, setPreviewMaxHeight] = useState<number | null>(null);
   const outlierModalRef = useRef<HTMLDivElement>(null);
   const missingModalRef = useRef<HTMLDivElement>(null);
 
@@ -180,6 +246,27 @@ export const DataQualityView: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMissingModalOpen]);
 
+  useEffect(() => {
+    const element = uploadPanelRef.current;
+    if (!element) return;
+
+    const updateHeight = () => {
+      const nextHeight = element.getBoundingClientRect().height * 4;
+      setPreviewMaxHeight(nextHeight);
+    };
+
+    updateHeight();
+
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+    window.addEventListener('resize', updateHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, []);
+
   const previewColumns = useMemo(() => {
     if (!report?.dataset_preview?.length) {
       return [];
@@ -206,6 +293,46 @@ export const DataQualityView: React.FC = () => {
   };
 
   const hasDatetimeAxis = report?.has_datetime_axis !== false;
+
+  const ensureLocalCsv = async () => {
+    if (localCsvRef.current) {
+      return localCsvRef.current;
+    }
+    if (!file) {
+      throw new Error('Select a .csv file before running local analysis.');
+    }
+    const csvData = await file.text();
+    localCsvRef.current = csvData;
+    return csvData;
+  };
+
+  const runLocalScan = async (csvData: string) => {
+    const localReport = await executeHybrid(null, { csvData }, { code: LOCAL_DQ_SCAN_CODE });
+    const hasPreviousState = Boolean(localPreviousCsvRef.current);
+    const nextReport = {
+      ...(localReport as ScanReport),
+      has_previous_state: hasPreviousState,
+      is_modified: hasPreviousState,
+    };
+    setReport(nextReport as ScanReport);
+    setDatasetColumns((localReport?.columns as string[]) || []);
+    setActiveDataset({
+      fileId: localFileIdRef.current,
+      originalFilename: file?.name || originalFilename,
+    });
+  };
+
+  const downloadLocalCsv = (csvData: string, filename: string) => {
+    const blob = new Blob([csvData], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const renderPreviewChart = (data: PreviewSeries | null, showBefore: boolean = true) => {
     if (!data) {
@@ -318,9 +445,14 @@ export const DataQualityView: React.FC = () => {
 
     setError(null);
     setReport(null);
-    setFileId(null);
-    setOriginalFilename(nextFile.name);
-    setFile(nextFile);
+    setActiveDataset({
+      file: nextFile,
+      fileId: null,
+      originalFilename: nextFile.name,
+      columns: [],
+    });
+    localCsvRef.current = null;
+    localPreviousCsvRef.current = null;
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -355,6 +487,12 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        await runLocalScan(csvData);
+        return;
+      }
+
       let currentFileId = fileId;
 
       if (!useExistingFile || !currentFileId) {
@@ -378,7 +516,10 @@ export const DataQualityView: React.FC = () => {
         }
 
         currentFileId = uploadResult.file_id;
-        setFileId(currentFileId);
+        setActiveDataset({
+          fileId: currentFileId,
+          originalFilename: uploadResult.original_filename || file?.name || originalFilename || null,
+        });
       }
 
       const scanResponse = await apiFetch('/api/dq/scan', {
@@ -402,6 +543,7 @@ export const DataQualityView: React.FC = () => {
 
       const scanResult = (await scanResponse.json()) as ScanReport;
       setReport(scanResult);
+      setDatasetColumns(scanResult.columns || []);
     } catch (scanError) {
       const message =
         scanError instanceof TypeError
@@ -441,9 +583,10 @@ export const DataQualityView: React.FC = () => {
       if (!uploadResponse.ok) throw new Error('Upload failed');
       const uploadResult = await uploadResponse.json() as UploadResponse;
       currentFileId = uploadResult.file_id;
-      setFileId(currentFileId);
-      setOriginalFilename(uploadResult.original_filename || file?.name || null);
-      setOriginalFilename(uploadResult.original_filename || file?.name || null);
+      setActiveDataset({
+        fileId: currentFileId,
+        originalFilename: uploadResult.original_filename || file?.name || null,
+      });
     }
 
     if (!currentFileId) throw new Error('No file available for processing');
@@ -457,6 +600,27 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        localPreviousCsvRef.current = csvData;
+
+        const result = await executeHybrid(
+          null,
+          { csvData, column: selectedOutlierCol, strategy: outlierStrategy },
+          { code: LOCAL_DQ_HANDLE_OUTLIERS_CODE },
+        );
+
+        const updatedCsv = result?.csv;
+        if (!updatedCsv) {
+          throw new Error('Local outlier handling failed.');
+        }
+
+        localCsvRef.current = updatedCsv;
+        setIsOutlierModalOpen(false);
+        await runLocalScan(updatedCsv);
+        return;
+      }
+
       const currentFileId = await resolveFileId();
 
       const actionRes = await apiFetch('/api/dq/handle-outliers', {
@@ -490,6 +654,17 @@ export const DataQualityView: React.FC = () => {
     setPreviewError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        const previewResult = await executeHybrid(
+          null,
+          { csvData, column: selectedOutlierCol, strategy: outlierStrategy },
+          { code: LOCAL_DQ_PREVIEW_OUTLIERS_CODE },
+        );
+        setPreviewData(previewResult as OutlierPreviewResponse);
+        return;
+      }
+
       const currentFileId = await resolveFileId();
       const response = await apiFetch('/api/dq/preview-outliers', {
         method: 'POST',
@@ -534,6 +709,27 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        localPreviousCsvRef.current = csvData;
+
+        const result = await executeHybrid(
+          null,
+          { csvData, column: selectedMissingCol, strategy: missingStrategy },
+          { code: LOCAL_DQ_HANDLE_MISSING_CODE },
+        );
+
+        const updatedCsv = result?.csv;
+        if (!updatedCsv) {
+          throw new Error('Local missing value handling failed.');
+        }
+
+        localCsvRef.current = updatedCsv;
+        setIsMissingModalOpen(false);
+        await runLocalScan(updatedCsv);
+        return;
+      }
+
       let currentFileId = fileId;
       
       if (!currentFileId && file) {
@@ -545,7 +741,7 @@ export const DataQualityView: React.FC = () => {
         if (!uploadResponse.ok) throw new Error('Upload failed');
         const uploadResult = await uploadResponse.json() as UploadResponse;
         currentFileId = uploadResult.file_id;
-        setFileId(currentFileId);
+        setActiveDataset({ fileId: currentFileId });
       }
       
       if (!currentFileId) throw new Error('No file available for processing');
@@ -581,6 +777,17 @@ export const DataQualityView: React.FC = () => {
     setMissingPreviewError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        const previewResult = await executeHybrid(
+          null,
+          { csvData, column: selectedMissingCol, strategy: missingStrategy },
+          { code: LOCAL_DQ_PREVIEW_MISSING_CODE },
+        );
+        setMissingPreviewData(previewResult as MissingPreviewResponse);
+        return;
+      }
+
       const currentFileId = await resolveFileId();
       const response = await apiFetch('/api/dq/preview-missing', {
         method: 'POST',
@@ -615,6 +822,27 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
+      if (isLocalMode) {
+        const csvData = localCsvRef.current || await ensureLocalCsv();
+        localPreviousCsvRef.current = csvData;
+        const result = await executeHybrid(
+          null,
+          { csvData },
+          { code: LOCAL_DQ_FIX_TIMESTAMPS_CODE },
+        );
+
+        if (!result?.csv) {
+          throw new Error('Local timestamp fix failed.');
+        }
+
+        localCsvRef.current = result.csv;
+        setToastMessage(
+          `Time axis restored! ${result.inserted_rows || 0} empty rows inserted. Please select an imputation strategy to fill data gaps.`,
+        );
+        await runLocalScan(result.csv);
+        return;
+      }
+
       const currentFileId = await resolveFileId();
       const response = await apiFetch('/api/dq/fix-timestamps', {
         method: 'POST',
@@ -641,7 +869,11 @@ export const DataQualityView: React.FC = () => {
   };
 
   const handleUndoLastChange = async () => {
-    if (!fileId || !report?.has_previous_state) {
+    if (isLocalMode) {
+      if (!localPreviousCsvRef.current) {
+        return;
+      }
+    } else if (!fileId || !report?.has_previous_state) {
       return;
     }
 
@@ -649,6 +881,18 @@ export const DataQualityView: React.FC = () => {
     setError(null);
 
     try {
+      if (isLocalMode) {
+        const previousCsv = localPreviousCsvRef.current;
+        if (!previousCsv) {
+          throw new Error('No previous local state available to undo.');
+        }
+        localCsvRef.current = previousCsv;
+        localPreviousCsvRef.current = null;
+        setToastMessage('Previous dataset state restored.');
+        await runLocalScan(previousCsv);
+        return;
+      }
+
       const response = await apiFetch('/api/dq/undo', {
         method: 'POST',
         headers: {
@@ -679,6 +923,26 @@ export const DataQualityView: React.FC = () => {
   };
 
   const handleSaveModified = async () => {
+    if (isLocalMode) {
+      const csvData = localCsvRef.current;
+      if (!csvData) {
+        return;
+      }
+
+      setIsSaving(true);
+      setError(null);
+
+      try {
+        downloadLocalCsv(csvData, 'dq_cleaned.csv');
+        setToastMessage('Local cleaned dataset downloaded.');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Save failed');
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+
     if (!fileId) {
       return;
     }
@@ -717,6 +981,21 @@ export const DataQualityView: React.FC = () => {
   };
 
   const handleDownloadDataset = async () => {
+    if (isLocalMode) {
+      const csvData = localCsvRef.current;
+      if (!csvData) {
+        return;
+      }
+      setError(null);
+      try {
+        const filename = originalFilename || file?.name || 'dataset.csv';
+        downloadLocalCsv(csvData, filename);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Download failed.');
+      }
+      return;
+    }
+
     if (!fileId) {
       return;
     }
@@ -731,9 +1010,12 @@ export const DataQualityView: React.FC = () => {
   };
 
   const handleSelectRecentDataset = async (datasetId: string, filename: string) => {
-    setFileId(datasetId);
-    setOriginalFilename(filename || null);
-    setFile(null);
+    setActiveDataset({
+      file: null,
+      fileId: datasetId,
+      originalFilename: filename || null,
+      columns: [],
+    });
     try {
       setIsLoading(true);
       setError(null);
@@ -759,6 +1041,7 @@ export const DataQualityView: React.FC = () => {
 
       const scanResult = (await scanResponse.json()) as ScanReport;
       setReport(scanResult);
+      setDatasetColumns(scanResult.columns || []);
       setToastMessage(`Loaded dataset: ${filename || datasetId}`);
     } catch (scanError) {
       const message =
@@ -793,6 +1076,7 @@ export const DataQualityView: React.FC = () => {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
             <div>
               <div
+                ref={uploadPanelRef}
                 className={`w-full rounded-xl border-2 border-dashed p-8 md:p-12 text-center transition-colors ${isDragging ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400 bg-white'}`}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -860,18 +1144,21 @@ export const DataQualityView: React.FC = () => {
                     Download Updated Dataset
                   </button>
                 )}
-
-                {file && (
-                  <span className="text-sm text-slate-500">
-                    Ready to scan {file.name}
-                  </span>
-                )}
               </div>
 
               {error && (
-                <p className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                  {error}
-                </p>
+                <div className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  <p>{error}</p>
+                  {isLocalMode && (
+                    <button
+                      type="button"
+                      onClick={() => setIsLocalMode(false)}
+                      className="mt-2 inline-flex items-center rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                    >
+                      Run via API
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
@@ -903,7 +1190,7 @@ export const DataQualityView: React.FC = () => {
               )}
 
               {!isLoadingRecent && recentDatasets.length > 0 && (
-                <div className="mt-4 flex-1 max-h-42 space-y-2 overflow-y-auto pr-1">
+                <div className="mt-4 flex-1 max-h-44 space-y-2 overflow-y-auto pr-1">
                   {recentDatasets.map((dataset) => (
                     <button
                       key={dataset.file_id}
@@ -1077,8 +1364,14 @@ export const DataQualityView: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleSaveModified}
-                    disabled={isSaving || report?.is_modified}
-                    title={report?.is_modified ? 'Dataset already saved' : 'Save the current version permanently'}
+                    disabled={isSaving || (!isLocalMode && report?.is_modified)}
+                    title={
+                      isLocalMode
+                        ? 'Download the current version'
+                        : report?.is_modified
+                          ? 'Dataset already saved'
+                          : 'Save the current version permanently'
+                    }
                     className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isSaving ? 'Saving...' : 'Save Changes'}
@@ -1086,7 +1379,7 @@ export const DataQualityView: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleUndoLastChange}
-                    disabled={isUndoing || !report.has_previous_state}
+                    disabled={isUndoing || (isLocalMode ? !localPreviousCsvRef.current : !report.has_previous_state)}
                     className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isUndoing ? 'Undoing...' : 'Undo'}
@@ -1094,7 +1387,10 @@ export const DataQualityView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="w-full max-w-full overflow-x-auto overflow-y-auto flex-1 min-h-0 rounded-xl border border-slate-200 scs-scrollbar">
+              <div
+                className="w-full max-w-full overflow-x-auto overflow-y-auto flex-1 min-h-0 rounded-xl border border-slate-200 scs-scrollbar"
+                style={previewMaxHeight ? { maxHeight: previewMaxHeight } : undefined}
+              >
                 <table className="min-w-full w-max border-collapse text-sm">
                   <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm text-slate-700">
                     <tr>

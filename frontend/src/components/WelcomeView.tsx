@@ -100,6 +100,10 @@ export const WelcomeView = () => {
                 'Get Started'
               )}
             </button>
+
+            <p className="text-xs text-slate-600">
+              By clicking Get Started, you agree to our <a href="#privacy-policy" className="text-blue-600 hover:text-blue-700 hover:underline font-medium">Privacy Policy</a> and <a href="#terms-of-service" className="text-blue-600 hover:text-blue-700 hover:underline font-medium">Terms of Service</a>.
+            </p>
           </div>
 
           <div className="grid gap-3">
