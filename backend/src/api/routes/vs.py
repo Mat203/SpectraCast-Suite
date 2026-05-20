@@ -23,9 +23,20 @@ class StylesResponse(BaseModel):
     styles: List[str]
 
 
-def build_plot_source_code(x_col: str, y_cols: List[str], chart_type: str, style_name: str) -> str:
-    safe_y_cols = y_cols or ["y"]
-    y_cols_literal = ", ".join(f"'{col}'" for col in safe_y_cols)
+def build_plot_source_code(
+    x_col: str,
+    primary_cols: List[str],
+    secondary_cols: List[str],
+    chart_type: str,
+    style_name: str,
+) -> str:
+    safe_secondary = secondary_cols
+    safe_primary = primary_cols or ([] if safe_secondary else ["y"])
+    primary_literal = ", ".join(f"'{col}'" for col in safe_primary)
+    secondary_literal = ", ".join(f"'{col}'" for col in safe_secondary)
+    all_cols = safe_primary + safe_secondary
+    if not all_cols:
+        all_cols = ["y"]
     lines: List[str] = [
         "import json",
         "import pandas as pd",
@@ -50,32 +61,69 @@ def build_plot_source_code(x_col: str, y_cols: List[str], chart_type: str, style
         lines.append("x = df.index")
 
     lines.append("")
+    lines.append("fig, ax = plt.subplots()")
+    if safe_secondary:
+        lines.append("ax2 = ax.twinx()")
 
     if chart_type == '2':
         lines.extend([
             "import numpy as np",
             "indices = np.arange(len(x))",
-            f"bar_width = 0.8 / {len(safe_y_cols)}",
-            f"for i, y_col in enumerate([{y_cols_literal}]):",
-            f"    offset = (i - {len(safe_y_cols)} / 2) * bar_width + bar_width / 2",
-            "    plt.bar(indices + offset, df[y_col], width=bar_width, label=y_col)",
-            "plt.xticks(indices, x)",
+            f"total = max({len(all_cols)}, 1)",
+            "bar_width = 0.8 / total",
+            "offset = -((total - 1) / 2) * bar_width",
+            f"for y_col in [{primary_literal}]:",
+            "    ax.bar(indices + offset, df[y_col], width=bar_width, label=y_col)",
+            "    offset += bar_width",
         ])
+        if safe_secondary:
+            lines.extend([
+                f"for y_col in [{secondary_literal}]:",
+                "    ax2.bar(indices + offset, df[y_col], width=bar_width, label=f'{y_col} (secondary)', alpha=0.8)",
+                "    offset += bar_width",
+            ])
+        lines.append("ax.set_xticks(indices)")
+        lines.append("ax.set_xticklabels(x, rotation=270, ha='right')")
     elif chart_type == '3':
         lines.extend([
-            f"for y_col in [{y_cols_literal}]:",
-            "    plt.scatter(x, df[y_col], label=y_col)",
+            f"for y_col in [{primary_literal}]:",
+            "    ax.scatter(x, df[y_col], label=y_col)",
         ])
+        if safe_secondary:
+            lines.extend([
+                f"for y_col in [{secondary_literal}]:",
+                "    ax2.scatter(x, df[y_col], label=f'{y_col} (secondary)')",
+            ])
     else:
         lines.extend([
-            f"for y_col in [{y_cols_literal}]:",
-            "    plt.plot(x, df[y_col], label=y_col)",
+            f"for y_col in [{primary_literal}]:",
+            "    ax.plot(x, df[y_col], label=y_col)",
         ])
+        if safe_secondary:
+            lines.extend([
+                f"for y_col in [{secondary_literal}]:",
+                "    ax2.plot(x, df[y_col], label=f'{y_col} (secondary)')",
+            ])
 
     lines.extend([
-        "plt.xlabel('" + (x_col or "Date") + "')",
-        "plt.ylabel('Values')",
-        "plt.legend(frameon=False)",
+        "ax.set_title('" + ", ".join(all_cols) + " vs " + (x_col or "Date") + "')",
+        "ax.set_xlabel('" + (x_col or "Date") + "')",
+        "ax.set_ylabel('Primary Values' if " + str(bool(primary_cols)) + " else 'Values')",
+    ])
+    if safe_secondary:
+        lines.append("ax2.set_ylabel('Secondary Values')")
+
+    lines.extend([
+        "handles, labels = ax.get_legend_handles_labels()",
+    ])
+    if safe_secondary:
+        lines.extend([
+            "handles2, labels2 = ax2.get_legend_handles_labels()",
+            "handles += handles2",
+            "labels += labels2",
+        ])
+    lines.extend([
+        "ax.legend(handles, labels, frameon=False)",
         "plt.tight_layout()",
         "plt.show()",
     ])
@@ -124,15 +172,23 @@ def generate_plot(
     output_filename = f"plot_{file_id_safe}.png"
     
     x_col = request.x_col or request.x
-    y_cols = request.y_axes if request.y_axes else (request.y_cols if request.y_cols else ([request.y] if request.y else []))
     chart_type = request.chart_type or request.plot_type
+
+    if request.y_axes:
+        primary_cols = [axis.column for axis in request.y_axes if axis.axis != "secondary"]
+        secondary_cols = [axis.column for axis in request.y_axes if axis.axis == "secondary"]
+    else:
+        y_cols = request.y_cols if request.y_cols else ([request.y] if request.y else [])
+        primary_cols = y_cols
+        secondary_cols = []
 
     output_path = engine.generate_plot(
         df=df,
         x_col=x_col,
-        y_cols=y_cols,
+        y_cols=primary_cols,
         chart_type=chart_type,
-        filename=output_filename
+        filename=output_filename,
+        secondary_cols=secondary_cols,
     )
 
     if not output_path or not output_path.exists():
@@ -144,7 +200,8 @@ def generate_plot(
 
     source_code = build_plot_source_code(
         x_col=x_col,
-        y_cols=y_cols,
+        primary_cols=primary_cols,
+        secondary_cols=secondary_cols,
         chart_type=chart_type,
         style_name=request.style_filename or request.style_name,
     )

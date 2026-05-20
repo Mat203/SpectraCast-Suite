@@ -503,30 +503,81 @@ if df is None:
     raise ValueError("No dataset provided")
 
 x_col = payload.get("x_col") or payload.get("x")
-y_cols = payload.get("y_cols") or ([payload.get("y")] if payload.get("y") else [])
 chart_type = payload.get("chart_type") or payload.get("plot_type")
 
+y_axes = payload.get("y_axes") or []
+primary_cols = []
+secondary_cols = []
+
+if isinstance(y_axes, list):
+    for item in y_axes:
+        if isinstance(item, dict):
+            column = item.get("column")
+            axis = item.get("axis", "primary")
+        else:
+            column = item
+            axis = "primary"
+        if not column:
+            continue
+        if axis == "secondary":
+            secondary_cols.append(column)
+        else:
+            primary_cols.append(column)
+
+if not primary_cols and payload.get("y_cols"):
+    primary_cols = payload.get("y_cols")
+if not primary_cols and payload.get("y"):
+    primary_cols = [payload.get("y")]
+
 fig, ax = plt.subplots()
+ax2 = ax.twinx() if secondary_cols else None
 
 if x_col and x_col in df.columns:
     x_data = df[x_col]
 else:
     x_data = df.index
 
-if chart_type == "2":
-    for col in y_cols:
-        ax.bar(x_data, df[col], label=col)
-elif chart_type == "3":
-    for col in y_cols:
-        ax.scatter(x_data, df[col], label=col)
-else:
-    for col in y_cols:
-        ax.plot(x_data, df[col], label=col)
+all_cols = primary_cols + secondary_cols
+if not all_cols:
+    all_cols = ["y"]
 
-ax.set_title(", ".join(y_cols) + " vs " + (x_col or "Date"))
+if chart_type == "2":
+    indices = range(len(x_data))
+    total = max(len(all_cols), 1)
+    bar_width = 0.8 / total
+    offset = -((total - 1) / 2) * bar_width
+    for col in primary_cols:
+        ax.bar([i + offset for i in indices], df[col], width=bar_width, label=col)
+        offset += bar_width
+    if ax2:
+        for col in secondary_cols:
+            ax2.bar([i + offset for i in indices], df[col], width=bar_width, label=f"{col} (secondary)", alpha=0.8)
+            offset += bar_width
+elif chart_type == "3":
+    for col in primary_cols:
+        ax.scatter(x_data, df[col], label=col)
+    if ax2:
+        for col in secondary_cols:
+            ax2.scatter(x_data, df[col], label=f"{col} (secondary)")
+else:
+    for col in primary_cols:
+        ax.plot(x_data, df[col], label=col)
+    if ax2:
+        for col in secondary_cols:
+            ax2.plot(x_data, df[col], label=f"{col} (secondary)")
+
+ax.set_title(", ".join(all_cols) + " vs " + (x_col or "Date"))
 ax.set_xlabel(x_col or "Date")
-ax.set_ylabel("Values")
-ax.legend(frameon=False)
+ax.set_ylabel("Primary Values" if primary_cols else "Values")
+if ax2 and secondary_cols:
+    ax2.set_ylabel("Secondary Values")
+
+handles, labels = ax.get_legend_handles_labels()
+if ax2:
+    handles2, labels2 = ax2.get_legend_handles_labels()
+    handles += handles2
+    labels += labels2
+ax.legend(handles, labels, frameon=False)
 
 buffer = io.BytesIO()
 fig.tight_layout()

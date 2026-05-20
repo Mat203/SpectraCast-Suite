@@ -78,10 +78,15 @@ interface LeadingIndicatorsStreamState {
   toastDismissed: boolean;
 }
 
+interface VisualStandardizerYAxis {
+  column: string;
+  axis: 'primary' | 'secondary';
+}
+
 interface VisualStandardizerState {
   activeTab: VisualStandardizerTab;
   xAxis: string;
-  yAxes: string[];
+  yAxes: VisualStandardizerYAxis[];
   plotType: string;
   selectedStyle: string;
   outputFilename: string;

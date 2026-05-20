@@ -1,8 +1,13 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Literal
 
 class StyleListResponse(BaseModel):
     styles: List[str]
+
+
+class YAxisConfig(BaseModel):
+    column: str
+    axis: Literal["primary", "secondary"] = "primary"
 
 class GeneratePlotRequest(BaseModel):
     file_id: str
@@ -11,7 +16,7 @@ class GeneratePlotRequest(BaseModel):
     x: str = ""
     x_col: str = ""
     y: str = ""
-    y_axes: List[str] = []
+    y_axes: List[YAxisConfig] = []
     y_cols: List[str] = []
     plot_type: str = "1"
     chart_type: str = "1"

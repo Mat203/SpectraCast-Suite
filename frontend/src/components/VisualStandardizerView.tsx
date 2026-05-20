@@ -9,6 +9,11 @@ import type { AppStoreState } from '../store/useAppStore';
 
 type Tab = 'plot_generator' | 'code_standardizer' | 'style_creator';
 
+type YAxisAssignment = {
+  column: string;
+  axis: 'primary' | 'secondary';
+};
+
 interface GeneratePlotResponse {
   status: string;
   plot_filename: string;
@@ -52,11 +57,44 @@ export const VisualStandardizerView: React.FC = () => {
     rawCode,
   } = visualStandardizer;
 
-  const resolvedYAxes = Array.isArray(yAxes) ? yAxes : [];
+  const normalizeYAxes = (value: unknown): YAxisAssignment[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const mapped = value
+      .map((item) => {
+        if (typeof item === 'string') {
+          return { column: item, axis: 'primary' as const };
+        }
+        if (item && typeof item === 'object') {
+          const column = (item as { column?: unknown }).column;
+          if (typeof column !== 'string' || !column) {
+            return null;
+          }
+          const axisValue = (item as { axis?: unknown }).axis;
+          const axis = axisValue === 'secondary' ? 'secondary' : 'primary';
+          return { column, axis } as YAxisAssignment;
+        }
+        return null;
+      })
+      .filter((item): item is YAxisAssignment => Boolean(item));
+
+    const seen = new Set<string>();
+    return mapped.filter((item) => {
+      if (seen.has(item.column)) {
+        return false;
+      }
+      seen.add(item.column);
+      return true;
+    });
+  };
+
+  const resolvedYAxes = normalizeYAxes(yAxes);
 
   const setActiveTab = (value: Tab) => setVisualStandardizer({ activeTab: value });
   const setXAxis = (value: string) => setVisualStandardizer({ xAxis: value });
-  const setYAxes = (value: string[]) => setVisualStandardizer({ yAxes: value });
+  const setYAxes = (value: YAxisAssignment[]) => setVisualStandardizer({ yAxes: value });
   const setPlotType = (value: string) => setVisualStandardizer({ plotType: value });
   const setSelectedStyle = (value: string) => setVisualStandardizer({ selectedStyle: value });
   const setOutputFilename = (value: string) => setVisualStandardizer({ outputFilename: value });
@@ -67,18 +105,53 @@ export const VisualStandardizerView: React.FC = () => {
     if (!value) {
       return;
     }
-    if (resolvedYAxes.includes(value)) {
-      setYAxes(resolvedYAxes.filter((axis) => axis !== value));
+
+    const existing = resolvedYAxes.find((axis) => axis.column === value);
+    if (existing) {
+      setYAxes(resolvedYAxes.filter((axis) => axis.column !== value));
       return;
     }
-    setYAxes([...resolvedYAxes, value]);
+
+    setYAxes([...resolvedYAxes, { column: value, axis: 'primary' }]);
   };
+
+  const setAxisForColumn = (column: string, axis: 'primary' | 'secondary') => {
+    if (!column) {
+      return;
+    }
+
+    const existing = resolvedYAxes.find((item) => item.column === column);
+    if (!existing) {
+      setYAxes([...resolvedYAxes, { column, axis }]);
+      return;
+    }
+
+    setYAxes(
+      resolvedYAxes.map((item) =>
+        item.column === column ? { ...item, axis } : item,
+      ),
+    );
+  };
+
+  const getAxisForColumn = (column: string) =>
+    resolvedYAxes.find((item) => item.column === column)?.axis;
+
+  const areYAxesEqual = (left: YAxisAssignment[], right: YAxisAssignment[]) =>
+    left.length === right.length &&
+    left.every((item, index) =>
+      item.column === right[index]?.column && item.axis === right[index]?.axis,
+    );
 
   useEffect(() => {
     if (!Array.isArray(yAxes)) {
       setYAxes([]);
+      return;
     }
-  }, [yAxes]);
+
+    if (!areYAxesEqual(resolvedYAxes, yAxes as YAxisAssignment[])) {
+      setYAxes(resolvedYAxes);
+    }
+  }, [yAxes, resolvedYAxes, setYAxes]);
 
   const {
     isDragging,
@@ -179,20 +252,20 @@ export const VisualStandardizerView: React.FC = () => {
     }
 
     const shouldResetXAxis = !xAxis || !columns.includes(xAxis);
-    const normalizedYAxes = resolvedYAxes.filter((axis) => columns.includes(axis));
+    const normalizedYAxes = resolvedYAxes.filter((axis) => columns.includes(axis.column));
     const shouldResetYAxis = normalizedYAxes.length === 0;
 
     if (shouldResetXAxis || shouldResetYAxis || normalizedYAxes.length !== resolvedYAxes.length) {
       const nextXAxis = columns[0] ?? '';
       const fallbackYAxis = columns[1] ?? columns[0] ?? '';
-      const updates: { xAxis?: string; yAxes?: string[] } = {};
+      const updates: { xAxis?: string; yAxes?: YAxisAssignment[] } = {};
 
       if (shouldResetXAxis) {
         updates.xAxis = nextXAxis;
       }
 
       if (shouldResetYAxis) {
-        updates.yAxes = fallbackYAxis ? [fallbackYAxis] : [];
+        updates.yAxes = fallbackYAxis ? [{ column: fallbackYAxis, axis: 'primary' }] : [];
       } else if (normalizedYAxes.length !== resolvedYAxes.length) {
         updates.yAxes = normalizedYAxes;
       }
@@ -312,10 +385,10 @@ export const VisualStandardizerView: React.FC = () => {
       setVisualStandardizerSession({ columns: parsedHeaders });
       if (parsedHeaders.length >= 2) {
         setXAxis(parsedHeaders[0]);
-        setYAxes([parsedHeaders[1]]);
+        setYAxes([{ column: parsedHeaders[1], axis: 'primary' }]);
       } else if (parsedHeaders.length === 1) {
         setXAxis(parsedHeaders[0]);
-        setYAxes([parsedHeaders[0]]);
+        setYAxes([{ column: parsedHeaders[0], axis: 'primary' }]);
       } else {
         setXAxis('');
         setYAxes([]);
@@ -490,7 +563,7 @@ export const VisualStandardizerView: React.FC = () => {
           {
             csvData,
             x_col: xAxis,
-            y_cols: resolvedYAxes,
+            y_axes: resolvedYAxes,
             chart_type: chartType,
           },
           { code: LOCAL_VS_PLOT_CODE, packages: ['matplotlib'] },
@@ -757,22 +830,55 @@ export const VisualStandardizerView: React.FC = () => {
                           <p className="text-slate-500">Upload a dataset to pick columns.</p>
                         )}
                         {columns.length > 0 && (
-                          <div className="space-y-2">
-                            {columns.map((col) => (
-                              <label key={col} className="flex items-center gap-2 text-slate-700">
-                                <input
-                                  type="checkbox"
-                                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                  checked={resolvedYAxes.includes(col)}
-                                  onChange={() => toggleYAxis(col)}
-                                />
-                                <span className="truncate" title={col}>{col}</span>
-                              </label>
-                            ))}
+                          <div className="space-y-3">
+                            {columns.map((col) => {
+                              const axis = getAxisForColumn(col);
+                              const isSelected = Boolean(axis);
+
+                              return (
+                                <div key={col} className="flex min-h-[36px] items-center justify-between gap-3">
+                                  <label className="flex items-center gap-2 text-slate-700">
+                                    <input
+                                      type="checkbox"
+                                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                      checked={isSelected}
+                                      onChange={() => toggleYAxis(col)}
+                                    />
+                                    <span className="truncate" title={col}>{col}</span>
+                                  </label>
+                                  {isSelected && (
+                                    <div className="flex items-center rounded-full border border-slate-200 bg-slate-100 p-0.5 text-xs">
+                                      <button
+                                        type="button"
+                                        onClick={() => setAxisForColumn(col, 'primary')}
+                                        className={`rounded-full px-2 py-0.5 font-medium transition ${
+                                          axis === 'primary'
+                                            ? 'bg-white text-slate-900 shadow-sm'
+                                            : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                      >
+                                        P
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setAxisForColumn(col, 'secondary')}
+                                        className={`rounded-full px-2 py-0.5 font-medium transition ${
+                                          axis === 'secondary'
+                                            ? 'bg-white text-slate-900 shadow-sm'
+                                            : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                      >
+                                        S
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
-                      <p className="mt-1 text-xs text-slate-500">Select one or more columns for the Y-axis.</p>
+                      <p className="mt-1 text-xs text-slate-500">Assign each selected column to the primary or secondary axis.</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">Plot Type</label>
