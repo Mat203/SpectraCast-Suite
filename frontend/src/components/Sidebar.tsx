@@ -17,12 +17,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onModuleChange }
   const { isLocalMode } = useComputeMode();
   const isProfileRoute = location.pathname.startsWith('/profile');
 
-  const navItemClass = (isActive: boolean) =>
-    `w-full px-3 py-2 rounded-md font-medium transition-colors text-left flex justify-between items-center ${
+  const navItemClass = (isActive: boolean, isDisabled: boolean = false) => {
+    if (isDisabled) {
+      return 'w-full px-3 py-2 rounded-md font-medium text-left flex justify-between items-center bg-slate-900/40 text-slate-500 cursor-not-allowed';
+    }
+
+    return `w-full px-3 py-2 rounded-md font-medium transition-colors text-left flex justify-between items-center ${
       isActive
         ? 'bg-indigo-600 text-white'
         : 'text-slate-300 hover:bg-slate-800 hover:text-white'
     }`;
+  };
 
   const handleModuleClick = (module: ModuleKey) => {
     onModuleChange(module);
@@ -57,13 +62,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, onModuleChange }
           Visual Standardizer
         </button>
 
-        <button
-          type="button"
-          className={navItemClass(!isProfileRoute && activeModule === 'li')}
-          onClick={() => handleModuleClick('li')}
-        >
-          Leading Indicators
-        </button>
+        <div className="relative group">
+          <button
+            type="button"
+            className={navItemClass(!isProfileRoute && activeModule === 'li', isLocalMode)}
+            onClick={() => handleModuleClick('li')}
+            disabled={isLocalMode}
+            aria-disabled={isLocalMode}
+          >
+            Leading Indicators
+          </button>
+          {isLocalMode && (
+            <div className="pointer-events-none absolute left-0 top-1/2 z-10 ml-2 w-56 -translate-y-1/2 rounded-md border border-slate-700 bg-slate-900 px-2.5 py-2 text-xs text-slate-200 opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100">
+              Leading Indicators is unavailable in local compute mode.
+            </div>
+          )}
+        </div>
 
       </nav>
     
