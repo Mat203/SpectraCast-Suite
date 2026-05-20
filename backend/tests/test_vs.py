@@ -50,6 +50,7 @@ def test_generate_plot_line_calls_plot(tmp_path: Path):
         mock_fig = MagicMock()
         mock_ax = MagicMock()
         mock_subplots.return_value = (mock_fig, mock_ax)
+        mock_ax.get_legend_handles_labels.return_value = ([], [])
 
         engine.generate_plot(df, x_col="", y_cols=["Price"], chart_type="1", filename="test_line.png")
 
@@ -65,6 +66,7 @@ def test_generate_plot_bar_calls_bar_for_each_series(tmp_path: Path):
         mock_fig = MagicMock()
         mock_ax = MagicMock()
         mock_subplots.return_value = (mock_fig, mock_ax)
+        mock_ax.get_legend_handles_labels.return_value = ([], [])
 
         engine.generate_plot(df, x_col="", y_cols=["Price", "Cost"], chart_type="2", filename="test_bar.png")
 
@@ -80,6 +82,7 @@ def test_generate_plot_scatter_calls_scatter(tmp_path: Path):
         mock_fig = MagicMock()
         mock_ax = MagicMock()
         mock_subplots.return_value = (mock_fig, mock_ax)
+        mock_ax.get_legend_handles_labels.return_value = ([], [])
 
         engine.generate_plot(df, x_col="Volume", y_cols=["Price"], chart_type="3", filename="test_scatter.png")
 
