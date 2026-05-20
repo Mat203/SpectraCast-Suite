@@ -51,7 +51,7 @@ export const ChartActionButtons: React.FC<ChartActionButtonsProps> = ({
         type="button"
         onClick={onDownload}
         disabled={isDownloadDisabled}
-        className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -62,8 +62,18 @@ export const ChartActionButtons: React.FC<ChartActionButtonsProps> = ({
         type="button"
         onClick={handleCopy}
         disabled={copyDisabled}
-        className="text-emerald-600 hover:text-emerald-700 text-sm font-medium flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="text-emerald-600 hover:text-emerald-700 text-sm font-medium flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
+        {copied ? (
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        ) : (
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 5h8a2 2 0 012 2v10a2 2 0 01-2 2H8a2 2 0 01-2-2V7a2 2 0 012-2z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 5V4a2 2 0 012-2h4a2 2 0 012 2v1" />
+          </svg>
+        )}
         {copied ? 'Copied!' : 'Copy Code'}
       </button>
     </div>

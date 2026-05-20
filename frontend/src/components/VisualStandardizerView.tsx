@@ -182,6 +182,7 @@ export const VisualStandardizerView: React.FC = () => {
 
   const [plotPreviewUrl, setPlotPreviewUrl] = useState<string | null>(null);
   const [localPlotBase64, setLocalPlotBase64] = useState<string | null>(null);
+  const [isPlotFullScreen, setIsPlotFullScreen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const ensureLocalCsv = async () => {
@@ -851,7 +852,7 @@ export const VisualStandardizerView: React.FC = () => {
                                       <button
                                         type="button"
                                         onClick={() => setAxisForColumn(col, 'primary')}
-                                        className={`rounded-full px-2 py-0.5 font-medium transition ${
+                                        className={`rounded-full border border-slate-200 px-2 py-0.5 font-medium transition hover:cursor-pointer ${
                                           axis === 'primary'
                                             ? 'bg-white text-slate-900 shadow-sm'
                                             : 'text-slate-500 hover:text-slate-700'
@@ -862,7 +863,7 @@ export const VisualStandardizerView: React.FC = () => {
                                       <button
                                         type="button"
                                         onClick={() => setAxisForColumn(col, 'secondary')}
-                                        className={`rounded-full px-2 py-0.5 font-medium transition ${
+                                        className={`rounded-full border border-slate-200 px-2 py-0.5 font-medium transition hover:cursor-pointer ${
                                           axis === 'secondary'
                                             ? 'bg-white text-slate-900 shadow-sm'
                                             : 'text-slate-500 hover:text-slate-700'
@@ -1006,11 +1007,24 @@ export const VisualStandardizerView: React.FC = () => {
                  <div className="mt-6 bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
                     <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center">
                       <h4 className="text-slate-800 font-medium">Generated Plot Preview</h4>
-                      <ChartActionButtons
-                        onDownload={handleDownloadPlot}
-                        isDownloadDisabled={isLoading || !plotResult?.plot_filename}
-                        chartCode={chartCode}
-                      />
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setIsPlotFullScreen(true)}
+                          disabled={!plotPreviewUrl}
+                          className="text-slate-600 hover:text-slate-800 text-sm font-medium border border-slate-200 rounded-full px-3 py-1 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                        >
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+                          </svg>
+                          Full Screen
+                        </button>
+                        <ChartActionButtons
+                          onDownload={handleDownloadPlot}
+                          isDownloadDisabled={isLoading || !plotResult?.plot_filename}
+                          chartCode={chartCode}
+                        />
+                      </div>
                     </div>
                     <div className="p-4 bg-slate-50 flex justify-center custom-plot-preview">
                       {plotPreviewUrl ? (
@@ -1028,6 +1042,38 @@ export const VisualStandardizerView: React.FC = () => {
                     </div>
                  </div>
               )}
+
+                {isPlotFullScreen && plotPreviewUrl && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 sm:p-6">
+                    <button
+                      type="button"
+                      onClick={() => setIsPlotFullScreen(false)}
+                      className="absolute inset-0 cursor-default"
+                      aria-label="Close full screen preview"
+                    />
+                    <div className="relative z-10 w-full max-w-7xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+                      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+                        <h5 className="text-sm font-semibold text-slate-800">Plot Preview</h5>
+                        <button
+                          type="button"
+                          onClick={() => setIsPlotFullScreen(false)}
+                          className="rounded-full border border-slate-200 p-2 text-slate-600 hover:bg-slate-100 hover:cursor-pointer"
+                        >
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6l-12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-center bg-slate-50 p-4">
+                        <img
+                          src={plotPreviewUrl}
+                          alt="Generated Plot"
+                          className="max-h-[85vh] w-auto rounded-lg border border-slate-200 shadow-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
             </div>
           )}
