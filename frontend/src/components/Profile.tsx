@@ -272,34 +272,48 @@ export const Profile: React.FC = () => {
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
               Provider
-              <select
-                value={llmProvider}
-                onChange={(event) => setLlmProvider(event.target.value as LlmProvider)}
-                disabled={!isLlmEnabled}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
-              >
-                {LLM_PROVIDERS.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.label}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={llmProvider}
+                  onChange={(event) => setLlmProvider(event.target.value as LlmProvider)}
+                  disabled={!isLlmEnabled}
+                  className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+                >
+                  {LLM_PROVIDERS.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                  </svg>
+                </span>
+              </div>
             </label>
 
             <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
               Model
-              <select
-                value={llmModel}
-                onChange={(event) => setLlmModel(event.target.value)}
-                disabled={!isLlmEnabled}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
-              >
-                {LLM_MODELS[llmProvider].map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={llmModel}
+                  onChange={(event) => setLlmModel(event.target.value)}
+                  disabled={!isLlmEnabled}
+                  className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+                >
+                  {LLM_MODELS[llmProvider].map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                  </svg>
+                </span>
+              </div>
             </label>
           </div>
 

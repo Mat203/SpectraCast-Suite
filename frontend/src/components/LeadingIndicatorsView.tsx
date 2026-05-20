@@ -436,12 +436,12 @@ export const LeadingIndicatorsView: React.FC = () => {
         </div>
 
         {!result ? (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-300 p-8 md:p-10">
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
                 <div>
                   <div
-                    className={`w-full rounded-xl border-2 border-dashed p-8 md:p-10 text-center transition-colors ${isDragging ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400 bg-white'}`}
+                    className={`w-full rounded-xl border-2 border-dashed p-8 md:p-12 text-center transition-colors ${isDragging ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400 bg-white'}`}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
@@ -535,30 +535,27 @@ export const LeadingIndicatorsView: React.FC = () => {
                   )}
 
                   {!isLoadingRecent && recentDatasets.length > 0 && (
-                    <div className="mt-4 flex-1 max-h-42 space-y-2 overflow-y-auto pr-1">
+                    <div className="mt-4 flex-1 max-h-44 space-y-2 overflow-y-auto pr-1">
                       {recentDatasets.map((dataset) => (
                         <button
                           key={dataset.file_id}
                           type="button"
                           onClick={() => handleSelectRecentDataset(dataset)}
                           disabled={isLoading}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-left transition-all hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="w-full text-left rounded-lg border border-slate-200 bg-white px-4 py-3 transition-all hover:bg-sky-50 hover:border-sky-300 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex min-w-0 items-center gap-2">
-                                <svg className="h-4 w-4 flex-shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 4h10l6 6v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 4v6h6" />
-                                </svg>
-                                <p className="truncate text-sm font-medium text-slate-800">
-                                  {dataset.original_filename || dataset.file_id}
-                                </p>
-                              </div>
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <svg className="h-4 w-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 4h10l6 6v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 4v6h6" />
+                              </svg>
+                              <p className="truncate text-sm font-medium text-slate-800">
+                                {dataset.original_filename || dataset.file_id}
+                              </p>
                             </div>
-
                             {dataset.is_modified && (
-                              <span className="flex-shrink-0 whitespace-nowrap rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                              <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700 flex-shrink-0 whitespace-nowrap">
                                 Modified
                               </span>
                             )}
@@ -573,29 +570,40 @@ export const LeadingIndicatorsView: React.FC = () => {
               {file && (
                 <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                   <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                    Target Column <span className="text-rose-600">*</span>
-                    <select
-                      value={targetColumn}
-                      onChange={(event) => setTargetColumn(event.target.value)}
-                      required
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
-                    >
-                      <option value="" disabled>
-                        Select target column
-                      </option>
-                      {columns.map((column) => (
-                        <option key={column} value={column}>
-                          {column}
+                    <span className="inline-flex items-center gap-1">
+                      Target Column <span className="text-rose-600">*</span>
+                    </span>
+                    <div className="relative">
+                      <select
+                        value={targetColumn}
+                        onChange={(event) => setTargetColumn(event.target.value)}
+                        required
+                        className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+                      >
+                        <option value="" disabled>
+                          Select target column
                         </option>
-                      ))}
-                    </select>
+                        {columns.map((column) => (
+                          <option key={column} value={column}>
+                            {column}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                        </svg>
+                      </span>
+                    </div>
                     {columns.length === 0 && (
                       <span className="text-xs font-normal text-amber-700">Could not detect CSV headers. Please verify file format.</span>
                     )}
                   </label>
 
                   <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                    Region <span className="text-rose-600">*</span>
+                    <span className="inline-flex items-center gap-1">
+                      Region <span className="text-rose-600">*</span>
+                    </span>
                     <input
                       type="text"
                       value={region}

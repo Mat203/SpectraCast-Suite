@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, downloadFile } from '../lib/api';
 import { STRATEGY_DESCRIPTIONS } from '../lib/outlierStrategies';
 import type { OutlierStrategyKey } from '../lib/outlierStrategies';
@@ -104,7 +104,10 @@ export const DataQualityView: React.FC = () => {
   const dataQualityUi = useAppStore((state: AppStoreState) => state.dataQualityUi) as AppStoreState['dataQualityUi'];
   const setDataQualityUi = useAppStore((state: AppStoreState) => state.setDataQualityUi) as AppStoreState['setDataQualityUi'];
 
-  const { isLocalMode, setIsLocalMode } = useComputeMode();
+  const { isLocalMode, setIsLocalMode } = useComputeMode() as {
+    isLocalMode: boolean;
+    setIsLocalMode: (value: boolean) => void;
+  };
   const { execute: executeHybrid } = useHybridCompute();
 
   const localCsvRef = useRef<string | null>(null);
@@ -182,6 +185,8 @@ export const DataQualityView: React.FC = () => {
   const setRecentError = (value: string | null) => setDataQualityUi({ recentError: value });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadPanelRef = useRef<HTMLDivElement>(null);
+  const [previewMaxHeight, setPreviewMaxHeight] = useState<number | null>(null);
   const outlierModalRef = useRef<HTMLDivElement>(null);
   const missingModalRef = useRef<HTMLDivElement>(null);
 
@@ -240,6 +245,27 @@ export const DataQualityView: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMissingModalOpen]);
+
+  useEffect(() => {
+    const element = uploadPanelRef.current;
+    if (!element) return;
+
+    const updateHeight = () => {
+      const nextHeight = element.getBoundingClientRect().height * 4;
+      setPreviewMaxHeight(nextHeight);
+    };
+
+    updateHeight();
+
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+    window.addEventListener('resize', updateHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, []);
 
   const previewColumns = useMemo(() => {
     if (!report?.dataset_preview?.length) {
@@ -1050,6 +1076,7 @@ export const DataQualityView: React.FC = () => {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
             <div>
               <div
+                ref={uploadPanelRef}
                 className={`w-full rounded-xl border-2 border-dashed p-8 md:p-12 text-center transition-colors ${isDragging ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400 bg-white'}`}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -1117,12 +1144,6 @@ export const DataQualityView: React.FC = () => {
                     Download Updated Dataset
                   </button>
                 )}
-
-                {file && (
-                  <span className="text-sm text-slate-500">
-                    Ready to scan {file.name}
-                  </span>
-                )}
               </div>
 
               {error && (
@@ -1169,7 +1190,7 @@ export const DataQualityView: React.FC = () => {
               )}
 
               {!isLoadingRecent && recentDatasets.length > 0 && (
-                <div className="mt-4 flex-1 max-h-42 space-y-2 overflow-y-auto pr-1">
+                <div className="mt-4 flex-1 max-h-44 space-y-2 overflow-y-auto pr-1">
                   {recentDatasets.map((dataset) => (
                     <button
                       key={dataset.file_id}
@@ -1366,7 +1387,10 @@ export const DataQualityView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="w-full max-w-full overflow-x-auto overflow-y-auto flex-1 min-h-0 rounded-xl border border-slate-200 scs-scrollbar">
+              <div
+                className="w-full max-w-full overflow-x-auto overflow-y-auto flex-1 min-h-0 rounded-xl border border-slate-200 scs-scrollbar"
+                style={previewMaxHeight ? { maxHeight: previewMaxHeight } : undefined}
+              >
                 <table className="min-w-full w-max border-collapse text-sm">
                   <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm text-slate-700">
                     <tr>
