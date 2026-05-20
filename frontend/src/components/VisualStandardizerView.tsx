@@ -543,7 +543,6 @@ export const VisualStandardizerView: React.FC = () => {
       </header>
 
       <div className="px-8 py-6 max-w-6xl mx-auto">
-        {/* Tabs */}
         <div className="flex border-b border-slate-200 mb-6">
           <button
             className={`py-3 px-6 font-medium text-sm border-b-2 transition-colors ${

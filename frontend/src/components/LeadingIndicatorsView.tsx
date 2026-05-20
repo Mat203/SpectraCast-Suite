@@ -420,6 +420,19 @@ export const LeadingIndicatorsView: React.FC = () => {
           <p className="mt-2 text-slate-600 max-w-3xl">
             Upload your dataset, select a target metric, and discover external leading indicators powered by LLM query generation and Google Trends.
           </p>
+          <div className="mt-4">
+            <span className="group relative inline-flex">
+              <span
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-300 bg-amber-100 text-xs font-bold text-amber-800"
+                aria-label="Leading Indicators info"
+              >
+                i
+              </span>
+              <span className="pointer-events-none absolute left-0 top-full z-10 mt-2 w-80 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 opacity-0 shadow-lg transition-opacity duration-200 group-hover:opacity-100">
+                This module depends on external services (LLM and the Google Trends API). Their availability can be unstable, especially during peak hours (evening or around noon). If the module fails to start, please try again later.
+              </span>
+            </span>
+          </div>
         </div>
 
         {!result ? (

@@ -63,7 +63,7 @@ interface LeadingIndicatorsUiState {
   recentError: string | null;
 }
 
-type LeadingIndicatorsToastMode = 'progress' | 'done';
+type LeadingIndicatorsToastMode = 'progress' | 'done' | 'error';
 
 interface LeadingIndicatorsStreamState {
   requestId: number;

@@ -18,6 +18,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeModule, onModule
   const toastVisible = useAppStore((state) => state.leadingIndicatorsStream.toastVisible);
   const toastMode = useAppStore((state) => state.leadingIndicatorsStream.toastMode);
   const currentStage = useAppStore((state) => state.leadingIndicatorsStream.currentStage);
+  const toastError = useAppStore((state) => state.leadingIndicatorsStream.error);
   const dismissToast = useAppStore((state) => state.dismissLeadingIndicatorsToast);
 
   return (
@@ -31,19 +32,18 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeModule, onModule
         isOpen={toastVisible}
         mode={toastMode}
         currentStage={currentStage}
+        errorText={toastError}
         onClose={dismissToast}
       />
 
       <LeadingIndicatorsStreamManager />
       
-      {/* Floating Help Button and Modal */}
       <HelpPrivacyButton onClick={() => setIsHelpModalOpen(true)} />
       <HelpPrivacyModal
         isOpen={isHelpModalOpen}
         onClose={() => setIsHelpModalOpen(false)}
       />
       
-      {/* Cookie Consent Banner */}
       <CookieConsentBanner />
     </div>
   );

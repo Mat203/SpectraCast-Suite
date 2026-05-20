@@ -42,7 +42,13 @@ export const LeadingIndicatorsStreamManager: React.FC = () => {
     if (!error) {
       return;
     }
-    setLeadingIndicatorsStream({ error, isProcessing: false });
+    setLeadingIndicatorsStream({
+      error,
+      isProcessing: false,
+      toastMode: 'error',
+      toastVisible: true,
+      toastDismissed: false,
+    });
     setLeadingIndicatorsUi({ error, isLoading: false });
   }, [error, setLeadingIndicatorsStream, setLeadingIndicatorsUi]);
 
