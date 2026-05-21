@@ -4,6 +4,7 @@ pydantic
 sqlalchemy
 pytest
 pytest-cov
+dotenv
 httpx
 pandas
 numpy
