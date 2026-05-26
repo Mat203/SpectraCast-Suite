@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from dotenv import load_dotenv
 
-from backend.src.api.routes.llm import build_provider_request
+from backend.src.modules.llm.provider import build_provider_request
 
 class QueryGenerator:
     def __init__(

@@ -2,7 +2,7 @@ import logging
 import pandas as pd
 import numpy as np
 from sklearn.impute import KNNImputer
-from statsmodels.tsa.holtwinters import SimpleExpSmoothing
+from backend.src.modules.dq.outliers import apply_outlier_strategy
 
 class DataCleaner:
     def __init__(self, df: pd.DataFrame):
@@ -78,27 +78,24 @@ class DataCleaner:
         self._apply_precision(column)
 
     def handle_outliers(self, column: str, method: str, outlier_mask: pd.Series):
-        if method == '3' or not outlier_mask.any():
+        if not outlier_mask.any():
             return
 
         self._get_target_precision(column)
-
         updated = int(outlier_mask.sum())
         self.logger.info("Outliers detected in '%s': %s values.", column, updated)
 
-        if pd.api.types.is_integer_dtype(self.df[column]):
-            self.df[column] = self.df[column].astype(float)
-
-        if method == '1':
-            model = SimpleExpSmoothing(self.df[column], initialization_method="estimated").fit()
-            self.df.loc[outlier_mask, column] = model.fittedvalues[outlier_mask]
-        elif method == '2':
-            self.df.loc[outlier_mask, column] = np.nan
-            self.df[column] = self.df[column].interpolate(method='linear')
-            self.df[column] = self.df[column].ffill().bfill()
+        try:
+            self.df = apply_outlier_strategy(
+                self.df,
+                column,
+                method,
+                outlier_mask=outlier_mask,
+            )
+        except ValueError:
+            return
 
         self.logger.info("Outlier handling updated %s values in '%s'.", updated, column)
-        
         self._apply_precision(column)
 
     def detect_and_handle_outliers(self, column: str, method: str):
@@ -109,18 +106,9 @@ class DataCleaner:
         if pd.api.types.is_datetime64_any_dtype(series) or pd.api.types.is_timedelta64_dtype(series):
             return
 
-        q1 = series.quantile(0.25)
-        q3 = series.quantile(0.75)
-        iqr = q3 - q1
-        if pd.isna(iqr) or iqr == 0:
+        try:
+            self.df = apply_outlier_strategy(self.df, column, method)
+        except ValueError:
             return
 
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
-        outlier_mask = (series < lower_bound) | (series > upper_bound)
-
-        if not outlier_mask.any():
-            return
-
-        self.logger.info("IQR detected %s outliers in '%s'.", int(outlier_mask.sum()), column)
-        self.handle_outliers(column, method, outlier_mask)
+        self._apply_precision(column)

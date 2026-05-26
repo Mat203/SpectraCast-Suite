@@ -11,10 +11,10 @@ from backend.src.api.services.storage import StorageService
 from fastapi.responses import StreamingResponse
 from pathlib import Path
 import numpy as np
-import anyio
 import json
 
-from backend.src.modules.li.li import LeadingIndicatorsModule 
+from backend.src.modules.li.li import LeadingIndicatorsModule
+from backend.src.modules.li.streaming import stream_leading_indicator_events
 
 router = APIRouter()
 stream_router = APIRouter()
@@ -138,60 +138,18 @@ async def stream_leading_indicators(
     if request.target_col not in df.columns:
         raise HTTPException(status_code=400, detail=f"Column '{request.target_col}' not found in dataset.")
 
-    module = LeadingIndicatorsModule()
-
     async def event_stream():
         try:
-            yield sse_event({"status": "progress", "stage": "Sending request to LLM..."})
-            generator = module.generator
-            if x_llm_api_key:
-                generator = module.generator.__class__(api_key=x_llm_api_key)
-
-            queries = await anyio.to_thread.run_sync(
-                generator.generate,
-                request.target_col,
-                request.region,
-                request.extra_info or "",
-            )
-
-            if not queries:
-                raise ValueError("Failed to generate queries.")
-
-            yield sse_event({"status": "progress", "stage": "Fetching data from Google Trends..."})
-            trends_df = await anyio.to_thread.run_sync(module.fetcher.fetch_data, queries, request.geo or "UA")
-
-            if trends_df.empty:
-                raise ValueError("Google Trends data is missing.")
-
-            trends_key = storage.join_key("outputs", f"raw_trends_{request.file_id}.csv")
-            await anyio.to_thread.run_sync(storage.write_csv, trends_key, trends_df, True)
-
-            yield sse_event({"status": "progress", "stage": "Finalizing calculations..."})
-            results_df = await anyio.to_thread.run_sync(
-                module.analyzer.calculate_lags,
-                df,
-                request.target_col,
-                trends_df,
-            )
-
-            final_key = storage.join_key("outputs", f"correlations_{request.file_id}.csv")
-            await anyio.to_thread.run_sync(storage.write_csv, final_key, results_df, False)
-
-            top_results_df = results_df.head(10).replace({float('nan'): None})
-            top_results_list = top_results_df.to_dict(orient="records")
-            safe_results = convert_numpy_types(top_results_list)
-
-            final_payload = {
-                "status": "done",
-                "data": {
-                    "status": "success",
-                    "queries_generated": queries,
-                    "trends_file": trends_key,
-                    "correlations_file": final_key,
-                    "top_results": safe_results,
-                },
-            }
-            yield sse_event(final_payload)
+            async for payload in stream_leading_indicator_events(
+                primary_df=df,
+                target_col=request.target_col,
+                region=request.region,
+                geo=request.geo or "UA",
+                extra_info=request.extra_info or "",
+                file_id=request.file_id,
+                user_api_key=x_llm_api_key,
+            ):
+                yield sse_event(payload)
         except Exception as exc:
             yield sse_event({"status": "error", "message": str(exc)})
 
