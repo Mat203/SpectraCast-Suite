@@ -29,10 +29,10 @@ from backend.src.modules.dq.cleaner import DataCleaner
 from backend.src.modules.dq.outliers import apply_outlier_strategy, preview_outlier_strategy
 from backend.src.modules.dq.missing import apply_missing_strategy, preview_missing_strategy
 from backend.src.modules.dq.time_tools import fix_time_axis
+from backend.src.modules.dq.reporting import build_scan_report
 from fastapi.responses import StreamingResponse
-import numpy as np
-import pandas as pd
 import os
+import pandas as pd
 
 router = APIRouter()
 storage = StorageService()
@@ -70,19 +70,6 @@ def restore_previous_dataset(file_id: str) -> None:
     )
     storage.delete(previous_key)
 
-def convert_numpy_types(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {k: convert_numpy_types(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_numpy_types(i) for i in obj]
-    elif isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    return obj
-
 @router.post("/scan", response_model=Dict[str, Any])
 def scan_data(
     request: ScanRequest,
@@ -102,19 +89,10 @@ def scan_data(
             raise HTTPException(status_code=404, detail="File not found or empty")
 
         print(f"[SCAN] DataFrame loaded: {df.shape[0]} rows, {df.shape[1]} columns")
-        scanner = DataScanner(df)
-        report = scanner.run_health_check()
-        clean_report = convert_numpy_types(report)
-
-        if isinstance(df.index, pd.DatetimeIndex):
-            preview_df = df.reset_index().replace({float('nan'): None})
-        else:
-            preview_df = df.copy().replace({float('nan'): None})
-        clean_report["dataset_preview"] = preview_df.to_dict(orient="records")
-        clean_report["has_previous_state"] = storage.exists(get_previous_dataset_key(request.file_id))
-        
+        has_previous_state = storage.exists(get_previous_dataset_key(request.file_id))
         dataset = db.query(Dataset).filter(Dataset.file_uuid == request.file_id).first()
-        clean_report["is_modified"] = dataset.is_modified if dataset else False
+        is_modified = dataset.is_modified if dataset else False
+        clean_report = build_scan_report(df, has_previous_state, is_modified)
         
         print(f"[SCAN] Scan completed successfully")
         return clean_report
