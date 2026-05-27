@@ -131,7 +131,7 @@ def clean_data(
         cleaner.impute_column(col, method)
 
     for col, method in request.outlier_methods.items():
-        if method not in ['1', '2', '3']:
+        if method not in ['clip_iqr', 'mean', 'median', 'drop']:
             raise HTTPException(status_code=400, detail=f"Invalid outlier handling method for column {col}")
 
         cleaner.detect_and_handle_outliers(col, method)
