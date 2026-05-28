@@ -61,10 +61,28 @@ class DataCleaner:
             self.logger.warning("Backward fill is disabled to avoid look-ahead bias.")
             return
         elif method == '5':
-            if isinstance(self.df.index, pd.DatetimeIndex):
-                self.df[column] = self.df.groupby(self.df.index.month)[column].transform(lambda x: x.fillna(x.mean()))
-            else:
+            if not isinstance(self.df.index, pd.DatetimeIndex):
                 print("Error: Seasonal imputation requires DatetimeIndex.")
+                return
+
+            freq = self.df.index.inferred_freq or pd.infer_freq(self.df.index)
+            if not freq:
+                print("Error: Seasonal imputation requires a regular DatetimeIndex.")
+                return
+
+            if freq.startswith("W"):
+                season_key = self.df.index.isocalendar().week
+            elif freq.startswith("Q"):
+                season_key = self.df.index.quarter
+            elif freq.startswith("M"):
+                season_key = self.df.index.month
+            elif freq in {"D", "B"} or (freq.endswith("D") and freq[:-1].isdigit()):
+                season_key = self.df.index.dayofweek
+            else:
+                print("Error: Seasonal imputation requires daily, weekly, monthly, or quarterly data.")
+                return
+
+            self.df[column] = self.df.groupby(season_key)[column].transform(lambda x: x.fillna(x.mean()))
         elif method == '6':
             numeric_cols = self.df.select_dtypes(include=[np.number]).columns
             imputer = KNNImputer(n_neighbors=5)
