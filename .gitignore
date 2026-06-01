@@ -6,3 +6,5 @@ __pycache__/
 *.pyd
 outputs
 .env.development
+.coverage
+frontend/coverage

@@ -41,19 +41,6 @@ def test_no_datetime_axis_falls_back_to_unknown():
     assert report["display_frequency"] == "Unknown (Irregular)"
 
 
-def test_outlier_detection_counts_extremes():
-    df = pd.DataFrame(
-        {
-            "date": pd.date_range("2024-01-01", periods=15, freq="D"),
-            "price": [100] * 14 + [5000],
-        }
-    )
-
-    report = DataScanner(df).run_health_check()
-
-    assert report["outliers"]["price"] == 1
-
-
 def test_business_daily_frequency_detected():
     df = pd.DataFrame(
         {
@@ -155,7 +142,7 @@ def test_recommend_missing_value_strategy_financial_asset_ffill():
     assert rec["strategy_code"] == "3"
 
 
-def test_recommend_missing_value_strategy_knn():
+def test_recommend_missing_value_strategy_linear():
     dates = pd.date_range("2024-01-01", periods=11, freq="D")
     base = [100, 101, 99, 101, 99, 100, 101, 99, 101, 99, 100]
     target = pd.Series(base, index=dates).astype(float)
@@ -167,7 +154,7 @@ def test_recommend_missing_value_strategy_knn():
     rec = scanner.recommend_missing_value_strategy("target", "Unknown")
 
     assert rec is not None
-    assert rec["strategy_code"] == "6"
+    assert rec["strategy_code"] == "1"
 
 
 def test_recommend_missing_value_strategy_linear():

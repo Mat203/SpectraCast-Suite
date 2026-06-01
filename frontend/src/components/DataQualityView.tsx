@@ -713,10 +713,16 @@ export const DataQualityView: React.FC = () => {
         const csvData = localCsvRef.current || await ensureLocalCsv();
         localPreviousCsvRef.current = csvData;
 
+        const packages = missingStrategy === '2'
+          ? ['scipy']
+          : missingStrategy === '6'
+            ? ['scikit-learn']
+            : [];
+
         const result = await executeHybrid(
           null,
           { csvData, column: selectedMissingCol, strategy: missingStrategy },
-          { code: LOCAL_DQ_HANDLE_MISSING_CODE },
+          { code: LOCAL_DQ_HANDLE_MISSING_CODE, packages },
         );
 
         const updatedCsv = result?.csv;
@@ -779,10 +785,15 @@ export const DataQualityView: React.FC = () => {
     try {
       if (isLocalMode) {
         const csvData = localCsvRef.current || await ensureLocalCsv();
+        const packages = missingStrategy === '2'
+          ? ['scipy']
+          : missingStrategy === '6'
+            ? ['scikit-learn']
+            : [];
         const previewResult = await executeHybrid(
           null,
           { csvData, column: selectedMissingCol, strategy: missingStrategy },
-          { code: LOCAL_DQ_PREVIEW_MISSING_CODE },
+          { code: LOCAL_DQ_PREVIEW_MISSING_CODE, packages },
         );
         setMissingPreviewData(previewResult as MissingPreviewResponse);
         return;
