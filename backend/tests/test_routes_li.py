@@ -12,8 +12,12 @@ def test_li_run_and_download(auth_client, db_session, test_user, fake_storage, m
     db_session.add(dataset)
     db_session.commit()
 
-    key = fake_storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
-    fake_storage.put_text(key, "date,target\n2024-01-01,100\n2024-01-02,101\n")
+    csv_content = "date,target\n2024-01-01,100\n2024-01-02,101\n"
+
+    key_raw = fake_storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
+    key_cleaned = fake_storage.build_key(file_id, suffix="cleaned", ext="csv", prefix="uploads")
+    fake_storage.put_text(key_raw, csv_content)
+    fake_storage.put_text(key_cleaned, csv_content)
 
     results_df = pd.DataFrame([
         {"Search Query": "q1", "Correlation (Lag 0)": 0.5, "Result": "Synchronous"},
@@ -24,6 +28,15 @@ def test_li_run_and_download(auth_client, db_session, test_user, fake_storage, m
 
     monkeypatch.setattr(li, "storage", fake_storage)
     monkeypatch.setattr("backend.src.api.routes.li.LeadingIndicatorsModule.run_api", fake_run_api)
+
+    from backend.src.core import loader as loader_module
+
+    original_init = loader_module.DataLoader.__init__
+
+    def fake_init(self, data_folder_name="uploads", storage=None):
+        original_init(self, data_folder_name=data_folder_name, storage=fake_storage)
+
+    monkeypatch.setattr(loader_module.DataLoader, "__init__", fake_init)
 
     payload = {
         "file_id": file_id,
