@@ -10,7 +10,7 @@ class StyleRemover(ast.NodeTransformer):
         }
         self.plot_funcs = {
             'plot', 'scatter', 'bar', 'hist', 'axhline', 'axvline', 
-            'set_xlabel', 'set_ylabel', 'tick_params', 'legend', 'title'
+            'set_xlabel', 'set_ylabel', 'set_title', 'tick_params', 'legend', 'title'
         }
         self.collected_imports = set()
 
