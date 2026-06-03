@@ -12,6 +12,7 @@ from backend.src.api.services.storage import StorageService
 from backend.src.core.loader import DataLoader
 from backend.src.modules.vs.vs import PlotEngine
 from backend.src.modules.vs.visualizer import VisualStandardizer
+from backend.src.modules.vs.code_builder import build_plot_source_code
 
 router = APIRouter()
 storage = StorageService()
@@ -23,113 +24,6 @@ class StylesResponse(BaseModel):
     styles: List[str]
 
 
-def build_plot_source_code(
-    x_col: str,
-    primary_cols: List[str],
-    secondary_cols: List[str],
-    chart_type: str,
-    style_name: str,
-) -> str:
-    safe_secondary = secondary_cols
-    safe_primary = primary_cols or ([] if safe_secondary else ["y"])
-    primary_literal = ", ".join(f"'{col}'" for col in safe_primary)
-    secondary_literal = ", ".join(f"'{col}'" for col in safe_secondary)
-    all_cols = safe_primary + safe_secondary
-    if not all_cols:
-        all_cols = ["y"]
-    lines: List[str] = [
-        "import json",
-        "import pandas as pd",
-        "import matplotlib.pyplot as plt",
-        "",
-        "df = pd.read_csv('your_data.csv')",
-        "",
-    ]
-
-    if style_name:
-        style_file = style_name if style_name.endswith('.json') else f"{style_name}.json"
-        lines.extend([
-            f"with open('{style_file}', 'r') as f:",
-            "    style = json.load(f)",
-            "plt.rcParams.update(style)",
-            "",
-        ])
-
-    if x_col:
-        lines.append(f"x = df['{x_col}']")
-    else:
-        lines.append("x = df.index")
-
-    lines.append("")
-    lines.append("fig, ax = plt.subplots()")
-    if safe_secondary:
-        lines.append("ax2 = ax.twinx()")
-
-    if chart_type == '2':
-        lines.extend([
-            "import numpy as np",
-            "indices = np.arange(len(x))",
-            f"total = max({len(all_cols)}, 1)",
-            "bar_width = 0.8 / total",
-            "offset = -((total - 1) / 2) * bar_width",
-            f"for y_col in [{primary_literal}]:",
-            "    ax.bar(indices + offset, df[y_col], width=bar_width, label=y_col)",
-            "    offset += bar_width",
-        ])
-        if safe_secondary:
-            lines.extend([
-                f"for y_col in [{secondary_literal}]:",
-                "    ax2.bar(indices + offset, df[y_col], width=bar_width, label=f'{y_col} (secondary)', alpha=0.8)",
-                "    offset += bar_width",
-            ])
-        lines.append("ax.set_xticks(indices)")
-        lines.append("ax.set_xticklabels(x, rotation=270, ha='right')")
-    elif chart_type == '3':
-        lines.extend([
-            f"for y_col in [{primary_literal}]:",
-            "    ax.scatter(x, df[y_col], label=y_col)",
-        ])
-        if safe_secondary:
-            lines.extend([
-                f"for y_col in [{secondary_literal}]:",
-                "    ax2.scatter(x, df[y_col], label=f'{y_col} (secondary)')",
-            ])
-    else:
-        lines.extend([
-            f"for y_col in [{primary_literal}]:",
-            "    ax.plot(x, df[y_col], label=y_col)",
-        ])
-        if safe_secondary:
-            lines.extend([
-                f"for y_col in [{secondary_literal}]:",
-                "    ax2.plot(x, df[y_col], label=f'{y_col} (secondary)')",
-            ])
-
-    lines.extend([
-        "ax.set_title('" + ", ".join(all_cols) + " vs " + (x_col or "Date") + "')",
-        "ax.set_xlabel('" + (x_col or "Date") + "')",
-        "ax.set_ylabel('Primary Values' if " + str(bool(primary_cols)) + " else 'Values')",
-    ])
-    if safe_secondary:
-        lines.append("ax2.set_ylabel('Secondary Values')")
-
-    lines.extend([
-        "handles, labels = ax.get_legend_handles_labels()",
-    ])
-    if safe_secondary:
-        lines.extend([
-            "handles2, labels2 = ax2.get_legend_handles_labels()",
-            "handles += handles2",
-            "labels += labels2",
-        ])
-    lines.extend([
-        "ax.legend(handles, labels, frameon=False)",
-        "plt.tight_layout()",
-        "plt.show()",
-    ])
-
-    return "\n".join(lines)
-
 @router.get("/styles", response_model=StylesResponse)
 def get_styles(current_user: User = Depends(get_current_user)):
     from backend.src.modules.vs.style_manager import StyleManager
@@ -139,6 +33,32 @@ def get_styles(current_user: User = Depends(get_current_user)):
         for file in manager.config_dir.glob("*.json"):
             styles.append(file.stem)
     return StylesResponse(styles=styles)
+
+
+@router.get("/styles/{style_name}")
+def get_style_config(
+    style_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    from backend.src.modules.vs.style_manager import StyleManager
+    import json
+    
+    manager = StyleManager()
+    safe_name = style_name.strip().lower().replace(" ", "_")
+    if safe_name.endswith(".json"):
+        safe_name = safe_name[:-5]
+        
+    file_path = manager.config_dir / f"{safe_name}.json"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Style '{style_name}' not found")
+        
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        return config
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.post("/generate", response_model=GeneratePlotResponse)

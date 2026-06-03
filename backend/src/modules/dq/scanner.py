@@ -18,7 +18,8 @@ class DataScanner:
         for col in self.df.columns:
             if self.df[col].dtype == 'object' or pd.api.types.is_string_dtype(self.df[col]):
                 try:
-                    self.df[col] = pd.to_numeric(self.df[col])
+                    cleaned_series = self.df[col].replace(r'[%]', '', regex=True)
+                    self.df[col] = pd.to_numeric(cleaned_series)
                 except (ValueError, TypeError):
                     pass
 
@@ -196,7 +197,9 @@ class DataScanner:
 
         mean_val = float(available.mean())
         std_val = float(available.std(ddof=0))
-        cv = std_val / abs(mean_val) if mean_val != 0 else float("inf")
+        
+        is_zero_centered = (available.min() < 0 and available.max() > 0) or abs(mean_val) < 1e-5
+        cv = std_val / abs(mean_val) if (mean_val != 0 and not is_zero_centered) else float("inf")
 
         autocorr_lag1 = available.autocorr(lag=1)
         autocorr_lag1 = float(autocorr_lag1) if not np.isnan(autocorr_lag1) else 0.0
@@ -218,30 +221,28 @@ class DataScanner:
 
         missing_ratio = missing_count / total_count if total_count else 1.0
 
+        valid_low_volatility = (not is_zero_centered) and (cv < 0.15)
+
         if seasonal_corr > 0.6:
             strategy_code = "5"
             strategy_label = "seasonal_mean"
-            reasoning = (
-                "Detected a strong seasonal pattern, so seasonal means preserve cyclical behavior."
-            )
-        elif cv < 0.15 and autocorr_lag1 > 0.8:
-            strategy_code = "1"
-            strategy_label = "linear"
-            reasoning = (
-                "Low volatility and strong trend continuity make linear interpolation reliable."
-            )
-        elif cv >= 0.15 or self._is_financial_asset(column_name):
+            reasoning = "Detected a strong seasonal pattern, so seasonal means preserve cyclical behavior."
+            
+        elif self._is_financial_asset(column_name):
             strategy_code = "3"
             strategy_label = "ffill"
-            reasoning = (
-                "High volatility or financial pricing favors forward fill to avoid creating artificial trends."
-            )
+            reasoning = "Financial pricing favors forward fill to avoid look-ahead bias and artificial trends."
+            
+        elif valid_low_volatility or autocorr_lag1 > 0.4:
+            strategy_code = "1"
+            strategy_label = "linear"
+            reasoning = "Smooth trend continuity or low volatility make linear interpolation reliable."
+            
         elif missing_ratio < 0.1 and max_corr > 0.6:
             strategy_code = "6"
             strategy_label = "knn"
-            reasoning = (
-                "Few missing values and strong cross-column correlation support KNN imputation."
-            )
+            reasoning = "Few missing values and strong cross-column correlation support KNN imputation."
+            
         else:
             strategy_code = "1"
             strategy_label = "linear"
@@ -252,7 +253,7 @@ class DataScanner:
             "strategy": strategy_label,
             "reasoning": reasoning,
             "metrics": {
-                "cv": cv,
+                "cv": cv if not is_zero_centered else None,
                 "autocorr_lag1": autocorr_lag1,
                 "seasonal_corr": seasonal_corr,
                 "missing_ratio": missing_ratio,
@@ -288,16 +289,23 @@ class DataScanner:
         frequency = report.get("frequency", "Unknown")
         
         for col in numeric_cols:
-            z_scores = np.abs(stats.zscore(self.df[col], nan_policy='omit'))
-            outliers_count = np.count_nonzero(z_scores > 3)
-            
-            if outliers_count > 0:
-                report["outliers"][col] = outliers_count
-
             series = self.df[col].dropna()
             if series.empty:
                 continue
 
+            q1 = series.quantile(0.25)
+            q3 = series.quantile(0.75)
+            iqr = q3 - q1
+            
+            if pd.isna(iqr) or iqr == 0:
+                outliers_count = 0
+            else:
+                lower_bound = q1 - 1.5 * iqr
+                upper_bound = q3 + 1.5 * iqr
+                outliers_count = int(((series < lower_bound) | (series > upper_bound)).sum())
+            
+            if outliers_count > 0:
+                report["outliers"][col] = outliers_count
             skew_value = float(series.skew())
             abs_skew = abs(skew_value)
 

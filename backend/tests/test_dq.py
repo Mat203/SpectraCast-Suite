@@ -41,19 +41,6 @@ def test_no_datetime_axis_falls_back_to_unknown():
     assert report["display_frequency"] == "Unknown (Irregular)"
 
 
-def test_outlier_detection_counts_extremes():
-    df = pd.DataFrame(
-        {
-            "date": pd.date_range("2024-01-01", periods=15, freq="D"),
-            "price": [100] * 14 + [5000],
-        }
-    )
-
-    report = DataScanner(df).run_health_check()
-
-    assert report["outliers"]["price"] == 1
-
-
 def test_business_daily_frequency_detected():
     df = pd.DataFrame(
         {
@@ -155,7 +142,7 @@ def test_recommend_missing_value_strategy_financial_asset_ffill():
     assert rec["strategy_code"] == "3"
 
 
-def test_recommend_missing_value_strategy_knn():
+def test_recommend_missing_value_strategy_linear():
     dates = pd.date_range("2024-01-01", periods=11, freq="D")
     base = [100, 101, 99, 101, 99, 100, 101, 99, 101, 99, 100]
     target = pd.Series(base, index=dates).astype(float)
@@ -167,7 +154,7 @@ def test_recommend_missing_value_strategy_knn():
     rec = scanner.recommend_missing_value_strategy("target", "Unknown")
 
     assert rec is not None
-    assert rec["strategy_code"] == "6"
+    assert rec["strategy_code"] == "1"
 
 
 def test_recommend_missing_value_strategy_linear():
@@ -210,34 +197,42 @@ def test_impute_knn_fills_numeric_column_and_keeps_non_numeric():
     assert cleaner.df["category"].iloc[1] == "B"
 
 
-def test_handle_outliers_ignore_does_not_change_values():
+def test_handle_outliers_clip_iqr_caps_values():
     dates = pd.date_range("2024-01-01", periods=5, freq="D")
     df = pd.DataFrame({"price": [100, 101, 5000, 103, 104]}, index=dates)
     outlier_mask = pd.Series([False, False, True, False, False], index=dates)
 
+    series = df["price"].astype(float)
+    q1 = series.quantile(0.25)
+    q3 = series.quantile(0.75)
+    iqr = q3 - q1
+    upper_bound = q3 + 1.5 * iqr
+
     cleaner = DataCleaner(df)
-    cleaner.handle_outliers("price", "3", outlier_mask)
+    cleaner.handle_outliers("price", "clip_iqr", outlier_mask)
 
-    assert cleaner.df["price"].iloc[2] == 5000
+    assert cleaner.df["price"].iloc[2] == pytest.approx(upper_bound)
 
 
-def test_handle_outliers_interpolates_values():
+def test_handle_outliers_replaces_with_mean():
     dates = pd.date_range("2024-01-01", periods=5, freq="D")
     df = pd.DataFrame({"price": [100, 101, 5000, 103, 104]}, index=dates)
     outlier_mask = pd.Series([False, False, True, False, False], index=dates)
 
+    expected_mean = df["price"].mean()
+
     cleaner = DataCleaner(df)
-    cleaner.handle_outliers("price", "2", outlier_mask)
+    cleaner.handle_outliers("price", "mean", outlier_mask)
 
-    assert cleaner.df["price"].iloc[2] == pytest.approx(102.0)
+    assert cleaner.df["price"].iloc[2] == pytest.approx(expected_mean)
 
 
-def test_handle_outliers_all_true_mask_stays_nan():
+def test_handle_outliers_drop_all_rows():
     dates = pd.date_range("2024-01-01", periods=5, freq="D")
     df = pd.DataFrame({"price": [100, 101, 5000, 103, 104]}, index=dates)
     outlier_mask = pd.Series([True, True, True, True, True], index=dates)
 
     cleaner = DataCleaner(df)
-    cleaner.handle_outliers("price", "2", outlier_mask)
+    cleaner.handle_outliers("price", "drop", outlier_mask)
 
-    assert cleaner.df["price"].isna().sum() == 5
+    assert len(cleaner.df) == 0

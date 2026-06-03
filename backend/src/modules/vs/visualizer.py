@@ -43,10 +43,19 @@ class VisualStandardizer:
     def standardize_user_code(self, raw_code: str) -> str:
         try:
             tree = ast.parse(raw_code)
-            cleaned_code = ast.unparse(StyleRemover().visit(tree))
+            remover = StyleRemover()
+            modified_tree = remover.visit(tree)
+            ast.fix_missing_locations(modified_tree)
+            cleaned_code = ast.unparse(modified_tree)
+            
+            required_imports = {"import matplotlib.pyplot as plt", "import pandas as pd", "import numpy as np"}
+            final_imports = sorted(list(required_imports.union(remover.collected_imports)))
+            imports_str = "\n".join(final_imports)
+            
             style_str = json.dumps(self.engine.style_dict, indent=4)
             style_str = style_str.replace("true", "True").replace("false", "False").replace("null", "None")
-            return f"import matplotlib.pyplot as plt\n\nplt.rcParams.update({style_str})\n\n{cleaned_code}"
+            
+            return f"{imports_str}\n\nplt.rcParams.update({style_str})\n\n{cleaned_code}"
         except Exception as e:
             print(f"Error standardizing code: {e}")
             return raw_code

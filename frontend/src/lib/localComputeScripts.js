@@ -5,6 +5,16 @@ import numpy as np
 if df is None:
     raise ValueError("No dataset provided")
 
+def _clean_hidden_missing_values(frame):
+    frame = frame.replace(r'(?i)^\\s*(nan|none|null|na)?\\s*$', np.nan, regex=True)
+    for col in frame.columns:
+        if frame[col].dtype == 'object' or pd.api.types.is_string_dtype(frame[col]):
+            try:
+                frame[col] = pd.to_numeric(frame[col])
+            except (ValueError, TypeError):
+                pass
+    return frame
+
 def _get_datetime_column(frame):
     for column in frame.columns:
         series = frame[column]
@@ -17,7 +27,7 @@ def _get_datetime_column(frame):
         if sample.empty:
             continue
 
-        if sample.str.fullmatch(r"\d+").all():
+        if sample.str.fullmatch(r"\\d+").all():
             continue
 
         name_hint = str(column).lower()
@@ -36,7 +46,8 @@ def _resolve_datetime_index(frame):
     if not datetime_column:
         return None
 
-    series = pd.to_datetime(frame[datetime_column], errors="coerce").dropna()
+    series = pd.to_datetime(frame[datetime_column], errors="coerce")
+    series = series.dropna()
     if len(series) < 2:
         return None
 
@@ -103,40 +114,198 @@ def _detect_frequency_and_gaps(datetime_index):
 
     return result
 
+def _seasonal_lag_from_frequency(frequency):
+    if frequency in {"MS", "ME"}:
+        return 12
+    if frequency == "QS":
+        return 4
+    if frequency == "W":
+        return 52
+    if frequency in {"D", "B"}:
+        return 7
+    if frequency.endswith("D"):
+        try:
+            day_stride = int(frequency[:-1])
+        except ValueError:
+            return None
+        if day_stride > 0:
+            return max(1, int(round(365 / day_stride)))
+    return None
+
+def _is_financial_asset(column_name):
+    name = column_name.lower()
+    tokens = (
+        "price",
+        "close",
+        "open",
+        "high",
+        "low",
+        "volume",
+        "fx",
+        "rate",
+        "yield",
+        "usd",
+        "eur",
+        "gbp",
+        "jpy",
+        "btc",
+        "eth",
+        "stock",
+        "equity",
+        "index",
+    )
+    return any(token in name for token in tokens)
+
+def _recommend_missing_value_strategy(frame, column_name, frequency):
+    if column_name not in frame.columns:
+        return None
+
+    series = frame[column_name]
+    if not pd.api.types.is_numeric_dtype(series):
+        return None
+
+    total_count = len(series)
+    missing_count = int(series.isna().sum())
+    if missing_count == 0 or total_count == 0:
+        return None
+
+    available = series.dropna()
+    if available.empty:
+        return None
+
+    mean_val = float(available.mean())
+    std_val = float(available.std(ddof=0))
+    cv = std_val / abs(mean_val) if mean_val != 0 else float("inf")
+
+    autocorr_lag1 = available.autocorr(lag=1)
+    autocorr_lag1 = float(autocorr_lag1) if not np.isnan(autocorr_lag1) else 0.0
+
+    seasonal_lag = _seasonal_lag_from_frequency(frequency)
+    seasonal_corr = 0.0
+    if seasonal_lag and len(available) > seasonal_lag:
+        seasonal_value = available.autocorr(lag=seasonal_lag)
+        seasonal_corr = float(seasonal_value) if not np.isnan(seasonal_value) else 0.0
+
+    numeric_cols = frame.select_dtypes(include=[np.number]).columns
+    max_corr = 0.0
+    if len(numeric_cols) > 1 and column_name in numeric_cols:
+        corr_matrix = frame[numeric_cols].corr()
+        if column_name in corr_matrix:
+            other_corrs = corr_matrix[column_name].drop(labels=[column_name]).abs()
+            if not other_corrs.empty:
+                max_corr = float(other_corrs.max())
+
+    missing_ratio = missing_count / total_count if total_count else 1.0
+
+    if seasonal_corr > 0.6:
+        strategy_code = "5"
+        strategy_label = "seasonal_mean"
+        reasoning = "Detected a strong seasonal pattern, so seasonal means preserve cyclical behavior."
+    elif cv < 0.15 and autocorr_lag1 > 0.8:
+        strategy_code = "1"
+        strategy_label = "linear"
+        reasoning = "Low volatility and strong trend continuity make linear interpolation reliable."
+    elif cv >= 0.15 or _is_financial_asset(column_name):
+        strategy_code = "3"
+        strategy_label = "ffill"
+        reasoning = "High volatility or financial pricing favors forward fill to avoid creating artificial trends."
+    elif missing_ratio < 0.1 and max_corr > 0.6:
+        strategy_code = "6"
+        strategy_label = "knn"
+        reasoning = "Few missing values and strong cross-column correlation support KNN imputation."
+    else:
+        strategy_code = "1"
+        strategy_label = "linear"
+        reasoning = "Defaulted to linear interpolation for a smooth, low-bias fill."
+
+    return {
+        "strategy_code": strategy_code,
+        "strategy": strategy_label,
+        "reasoning": reasoning,
+        "metrics": {
+            "cv": cv,
+            "autocorr_lag1": autocorr_lag1,
+            "seasonal_corr": seasonal_corr,
+            "missing_ratio": missing_ratio,
+            "max_corr": max_corr,
+        },
+    }
+
+df = _clean_hidden_missing_values(df)
+
 has_datetime_axis = isinstance(df.index, pd.DatetimeIndex) or _get_datetime_column(df) is not None
 
-time_check = _detect_frequency_and_gaps(_resolve_datetime_index(df)) if has_datetime_axis else {
-    "frequency": "Unknown",
-    "display_frequency": "Unknown (Irregular)",
-    "missing_dates_count": 0,
-    "missing_dates": [],
-}
+if has_datetime_axis:
+    time_check = _detect_frequency_and_gaps(_resolve_datetime_index(df))
+else:
+    time_check = {
+        "frequency": "Unknown",
+        "display_frequency": "Unknown (Irregular)",
+        "missing_dates_count": 0,
+        "missing_dates": [],
+        "time_series_message": "Time column not found. Time series analysis skipped.",
+    }
 
 missing_values = df.isna().sum().to_dict()
 
 outliers = {}
-for col in df.select_dtypes(include=[np.number]).columns:
+outlier_strategy_recommendations = {}
+missing_value_strategy_recommendations = {}
+
+numeric_cols = df.select_dtypes(include=[np.number]).columns
+for col in numeric_cols:
     series = df[col].dropna()
     if series.empty:
         continue
     std = series.std(ddof=0)
-    if std == 0:
-        continue
-    z = (series - series.mean()) / std
-    count = int((np.abs(z) > 3).sum())
-    if count > 0:
-        outliers[col] = count
+    if std != 0:
+        z = (series - series.mean()) / std
+        count = int((np.abs(z) > 3).sum())
+        if count > 0:
+            outliers[col] = count
 
-preview_df = df.reset_index() if isinstance(df.index, pd.DatetimeIndex) else df.copy()
-preview_df = preview_df.replace({float("nan"): None})
+    skew_value = float(series.skew())
+    abs_skew = abs(skew_value)
+
+    if abs_skew > 1.0:
+        strategy = "iqr_clip"
+        reasoning = (
+            "High skewness in the time series. The IQR method minimizes the impact of extreme values without losing data points"
+        )
+    elif abs_skew > 0.5:
+        strategy = "median"
+        reasoning = (
+            "Moderate skewness. Using the median provides robustness against outliers that distort the mean"
+        )
+    else:
+        strategy = "mean"
+        reasoning = (
+            "Distribution is close to symmetric. Using the mean is statistically optimal for filling anomalies"
+        )
+
+    outlier_strategy_recommendations[col] = {
+        "skew": skew_value,
+        "strategy": strategy,
+        "reasoning": reasoning,
+    }
+
+    if missing_values.get(col, 0) > 0:
+        missing_rec = _recommend_missing_value_strategy(df, col, time_check.get("frequency", "Unknown"))
+        if missing_rec:
+            missing_value_strategy_recommendations[col] = missing_rec
+
+if isinstance(df.index, pd.DatetimeIndex):
+    preview_df = df.reset_index().replace({float("nan"): None})
+else:
+    preview_df = df.copy().replace({float("nan"): None})
 
 result = {
     "rows": int(len(df)),
     "columns": list(df.columns),
     "outliers": outliers,
-    "outlier_strategy_recommendations": {},
+    "outlier_strategy_recommendations": outlier_strategy_recommendations,
     "missing_values": missing_values,
-    "missing_value_strategy_recommendations": {},
+    "missing_value_strategy_recommendations": missing_value_strategy_recommendations,
     "dataset_preview": preview_df.to_dict(orient="records"),
     "has_datetime_axis": has_datetime_axis,
     "has_previous_state": False,
@@ -144,7 +313,7 @@ result = {
 }
 result.update(time_check)
 `;
-
+export const LOCAL_LI_RUN_CODE = ``;
 export const LOCAL_DQ_HANDLE_OUTLIERS_CODE = `
 import numpy as np
 import pandas as pd
@@ -156,6 +325,8 @@ if df is None:
     raise ValueError("No dataset provided")
 if column not in df.columns:
     raise ValueError(f"Column '{column}' not found")
+if not pd.api.types.is_numeric_dtype(df[column]):
+    raise ValueError(f"Column '{column}' is not numeric")
 
 series = df[column].astype(float)
 q1 = series.quantile(0.25)
@@ -199,6 +370,8 @@ if df is None:
     raise ValueError("No dataset provided")
 if column not in df.columns:
     raise ValueError(f"Column '{column}' not found")
+if not pd.api.types.is_numeric_dtype(df[column]):
+    raise ValueError(f"Column '{column}' is not numeric")
 
 series = df[column].astype(float)
 q1 = series.quantile(0.25)
@@ -220,10 +393,21 @@ elif strategy == "drop":
 else:
     raise ValueError("Invalid strategy")
 
-x_values = [str(idx) for idx in range(len(df))]
+if isinstance(df.index, pd.DatetimeIndex):
+    x_values = [ts.isoformat() for ts in df.index]
+else:
+    x_values = [str(idx) for idx in range(len(df))]
 
 before_values = [None if pd.isna(v) else float(v) for v in series.tolist()]
 after_values = [None if pd.isna(v) else float(v) for v in after_series.tolist()]
+
+max_points = 300
+if len(x_values) > max_points:
+    indices = np.linspace(0, len(x_values) - 1, num=max_points, dtype=int)
+    indices = np.unique(indices)
+    x_values = [x_values[i] for i in indices]
+    before_values = [before_values[i] for i in indices]
+    after_values = [after_values[i] for i in indices]
 
 result = {
     "column": column,
@@ -245,27 +429,49 @@ if df is None:
     raise ValueError("No dataset provided")
 if column not in df.columns:
     raise ValueError(f"Column '{column}' not found")
+if not pd.api.types.is_numeric_dtype(df[column]):
+    raise ValueError(f"Column '{column}' is not numeric")
 
 series = df[column].astype(float)
+
+def _season_key_from_frequency(index):
+    freq = index.inferred_freq or pd.infer_freq(index)
+    if not freq:
+        return None
+    if freq.startswith("W"):
+        return index.isocalendar().week
+    if freq.startswith("Q"):
+        return index.quarter
+    if freq.startswith("M"):
+        return index.month
+    if freq in {"D", "B"} or (freq.endswith("D") and freq[:-1].isdigit()):
+        return index.dayofweek
+    return None
 
 if strategy == "1":
     series = series.interpolate(method="linear")
 elif strategy == "2":
-    try:
-        series = series.interpolate(method="spline", order=3)
-    except Exception:
-        series = series.interpolate(method="linear")
+    series = series.interpolate(method="spline", order=3)
 elif strategy == "3":
     series = series.ffill()
 elif strategy == "4":
     series = series
 elif strategy == "5":
-    if isinstance(df.index, pd.DatetimeIndex):
-        series = series.groupby(df.index.month).transform(lambda x: x.fillna(x.mean()))
-    else:
-        series = series
+    if not isinstance(df.index, pd.DatetimeIndex):
+        raise ValueError("Seasonal imputation requires DatetimeIndex")
+    season_key = _season_key_from_frequency(df.index)
+    if season_key is None:
+        raise ValueError("Seasonal imputation requires a regular daily, weekly, monthly, or quarterly index")
+    series = series.groupby(season_key).transform(lambda x: x.fillna(x.mean()))
 elif strategy == "6":
-    series = series.interpolate(method="linear")
+    from sklearn.impute import KNNImputer
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    if column not in numeric_cols:
+        raise ValueError(f"Column '{column}' is not numeric")
+    imputer = KNNImputer(n_neighbors=5)
+    imputed_matrix = imputer.fit_transform(df[numeric_cols])
+    col_idx = list(numeric_cols).index(column)
+    series = pd.Series(imputed_matrix[:, col_idx], index=df.index)
 elif strategy == "7":
     series = series
 else:
@@ -290,28 +496,50 @@ if df is None:
     raise ValueError("No dataset provided")
 if column not in df.columns:
     raise ValueError(f"Column '{column}' not found")
+if not pd.api.types.is_numeric_dtype(df[column]):
+    raise ValueError(f"Column '{column}' is not numeric")
 
 before_series = df[column].astype(float)
 
 series = before_series.copy()
+
+def _season_key_from_frequency(index):
+    freq = index.inferred_freq or pd.infer_freq(index)
+    if not freq:
+        return None
+    if freq.startswith("W"):
+        return index.isocalendar().week
+    if freq.startswith("Q"):
+        return index.quarter
+    if freq.startswith("M"):
+        return index.month
+    if freq in {"D", "B"} or (freq.endswith("D") and freq[:-1].isdigit()):
+        return index.dayofweek
+    return None
 if strategy == "1":
     series = series.interpolate(method="linear")
 elif strategy == "2":
-    try:
-        series = series.interpolate(method="spline", order=3)
-    except Exception:
-        series = series.interpolate(method="linear")
+    series = series.interpolate(method="spline", order=3)
 elif strategy == "3":
     series = series.ffill()
 elif strategy == "4":
     series = series
 elif strategy == "5":
-    if isinstance(df.index, pd.DatetimeIndex):
-        series = series.groupby(df.index.month).transform(lambda x: x.fillna(x.mean()))
-    else:
-        series = series
+    if not isinstance(df.index, pd.DatetimeIndex):
+        raise ValueError("Seasonal imputation requires DatetimeIndex")
+    season_key = _season_key_from_frequency(df.index)
+    if season_key is None:
+        raise ValueError("Seasonal imputation requires a regular daily, weekly, monthly, or quarterly index")
+    series = series.groupby(season_key).transform(lambda x: x.fillna(x.mean()))
 elif strategy == "6":
-    series = series.interpolate(method="linear")
+    from sklearn.impute import KNNImputer
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    if column not in numeric_cols:
+        raise ValueError(f"Column '{column}' is not numeric")
+    imputer = KNNImputer(n_neighbors=5)
+    imputed_matrix = imputer.fit_transform(df[numeric_cols])
+    col_idx = list(numeric_cols).index(column)
+    series = pd.Series(imputed_matrix[:, col_idx], index=df.index)
 elif strategy == "7":
     series = series
 else:
@@ -319,10 +547,21 @@ else:
 
 after_series = series
 
-x_values = [str(idx) for idx in range(len(df))]
+if isinstance(df.index, pd.DatetimeIndex):
+    x_values = [ts.isoformat() for ts in df.index]
+else:
+    x_values = [str(idx) for idx in range(len(df))]
 
 before_values = [None if pd.isna(v) else float(v) for v in before_series.tolist()]
 after_values = [None if pd.isna(v) else float(v) for v in after_series.tolist()]
+
+max_points = 300
+if len(x_values) > max_points:
+    indices = np.linspace(0, len(x_values) - 1, num=max_points, dtype=int)
+    indices = np.unique(indices)
+    x_values = [x_values[i] for i in indices]
+    before_values = [before_values[i] for i in indices]
+    after_values = [after_values[i] for i in indices]
 
 result = {
     "column": column,
@@ -349,6 +588,8 @@ def _get_datetime_column(frame):
         sample = series.dropna().astype(str)
         if sample.empty:
             continue
+        if sample.str.fullmatch(r"\\d+").all():
+            continue
         name_hint = str(column).lower()
         has_hint = any(token in name_hint for token in ("date", "time", "timestamp", "datetime"))
         has_separator = sample.str.contains(r"[-/:T ]").any()
@@ -357,33 +598,70 @@ def _get_datetime_column(frame):
             return column
     return None
 
-def _infer_frequency(idx):
-    if idx is None or len(idx) < 2:
-        return "Unknown"
-    sorted_index = idx.sort_values().drop_duplicates()
+def _resolve_datetime_index(frame):
+    if isinstance(frame.index, pd.DatetimeIndex):
+        return frame.index
+
+    datetime_column = _get_datetime_column(frame)
+    if not datetime_column:
+        return None
+
+    series = pd.to_datetime(frame[datetime_column], errors="coerce")
+    series = series.dropna()
+    if len(series) < 2:
+        return None
+
+    return pd.DatetimeIndex(series)
+
+def _detect_frequency_and_gaps(datetime_index):
+    result = {
+        "frequency": "Unknown",
+        "display_frequency": "Unknown (Irregular)",
+    }
+
+    if datetime_index is None or len(datetime_index) < 2:
+        return result
+
+    sorted_index = datetime_index.sort_values().drop_duplicates()
     if len(sorted_index) < 2:
-        return "Unknown"
+        return result
+
     deltas = sorted_index.to_series().diff().dropna()
     if deltas.empty:
-        return "Unknown"
+        return result
+
     dominant_delta = deltas.mode().iloc[0]
     dominant_delta_days = dominant_delta.days
     if dominant_delta_days <= 0:
-        return "Unknown"
+        return result
+
     if 28 <= dominant_delta_days <= 31:
         most_frequent_day = pd.Series(sorted_index.day).mode()[0]
-        return "MS" if most_frequent_day == 1 else "ME"
-    if 89 <= dominant_delta_days <= 93:
-        return "QS"
-    if dominant_delta_days == 7:
-        return "W"
-    if dominant_delta_days == 1:
+        freq_str = "MS" if most_frequent_day == 1 else "ME"
+    elif 89 <= dominant_delta_days <= 93:
+        freq_str = "QS"
+    elif dominant_delta_days == 7:
+        freq_str = "W"
+    elif dominant_delta_days == 1:
         has_weekends = (sorted_index.dayofweek >= 5).any()
-        return "B" if not has_weekends else "D"
-    return f"{dominant_delta_days}D"
+        freq_str = "B" if not has_weekends else "D"
+    else:
+        freq_str = f"{dominant_delta_days}D"
 
+    result["frequency"] = freq_str
+    return result
+
+datetime_index = _resolve_datetime_index(df)
+if datetime_index is None:
+    raise ValueError("Datetime column not found")
+
+time_check = _detect_frequency_and_gaps(datetime_index)
+frequency = time_check.get("frequency", "Unknown")
+if frequency == "Unknown":
+    raise ValueError("Frequency could not be inferred")
+
+datetime_column = None
 if isinstance(df.index, pd.DatetimeIndex):
-    datetime_index = df.index
     working_df = df.copy()
 else:
     datetime_column = _get_datetime_column(df)
@@ -395,17 +673,13 @@ else:
     working_df = working_df.dropna(subset=[datetime_column])
     working_df = working_df.set_index(datetime_column, drop=False)
 
-frequency = _infer_frequency(datetime_index)
-if frequency == "Unknown":
-    raise ValueError("Frequency could not be inferred")
-
 working_df = working_df.sort_index()
 new_index = pd.date_range(start=working_df.index.min(), end=working_df.index.max(), freq=frequency)
 updated_df = working_df.reindex(new_index)
 
 inserted_rows = int(len(new_index) - len(working_df.index.unique()))
 
-date_column_name = updated_df.index.name or "Date"
+date_column_name = datetime_column or updated_df.index.name or "Date"
 updated_df[date_column_name] = updated_df.index
 
 preview_df = updated_df.reset_index(drop=True).replace({float("nan"): None})
@@ -415,47 +689,6 @@ result = {
     "inserted_rows": inserted_rows,
     "dataset_preview": preview_df.to_dict(orient="records"),
     "csv": updated_df.to_csv(index=False),
-}
-`;
-
-export const LOCAL_LI_RUN_CODE = `
-import pandas as pd
-import numpy as np
-
-if df is None:
-    raise ValueError("No dataset provided")
-
-target_col = payload.get("target_col")
-if target_col not in df.columns:
-    raise ValueError(f"Column '{target_col}' not found in dataset.")
-
-numeric_cols = df.select_dtypes(include=[np.number]).columns
-queries = [col for col in numeric_cols if col != target_col]
-
-results = []
-for col in queries:
-    series = df[[target_col, col]].dropna()
-    if series.empty:
-        continue
-    corr = series[target_col].corr(series[col])
-    corr_val = 0.0 if pd.isna(corr) else float(round(corr, 3))
-    result_label = "Noise" if abs(corr_val) < 0.4 else "Synchronous"
-    results.append({
-        "Search Query": col,
-        "Correlation (Lag 0)": corr_val,
-        "Result": result_label,
-    })
-
-results_df = pd.DataFrame(results)
-
-raw_trends = df[queries].copy() if queries else pd.DataFrame()
-
-result = {
-    "status": "success",
-    "queries_generated": queries,
-    "trends_csv": raw_trends.to_csv(index=False),
-    "correlations_csv": results_df.to_csv(index=False),
-    "top_results": results_df.head(10).replace({float("nan"): None}).to_dict(orient="records"),
 }
 `;
 

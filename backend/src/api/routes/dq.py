@@ -26,10 +26,13 @@ from backend.src.api.services.storage import StorageService
 from backend.src.core.loader import DataLoader
 from backend.src.modules.dq.scanner import DataScanner
 from backend.src.modules.dq.cleaner import DataCleaner
+from backend.src.modules.dq.outliers import apply_outlier_strategy, preview_outlier_strategy
+from backend.src.modules.dq.missing import apply_missing_strategy, preview_missing_strategy
+from backend.src.modules.dq.time_tools import fix_time_axis
+from backend.src.modules.dq.reporting import build_scan_report
 from fastapi.responses import StreamingResponse
-import numpy as np
-import pandas as pd
 import os
+import pandas as pd
 
 router = APIRouter()
 storage = StorageService()
@@ -67,19 +70,6 @@ def restore_previous_dataset(file_id: str) -> None:
     )
     storage.delete(previous_key)
 
-def convert_numpy_types(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {k: convert_numpy_types(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_numpy_types(i) for i in obj]
-    elif isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    return obj
-
 @router.post("/scan", response_model=Dict[str, Any])
 def scan_data(
     request: ScanRequest,
@@ -99,19 +89,10 @@ def scan_data(
             raise HTTPException(status_code=404, detail="File not found or empty")
 
         print(f"[SCAN] DataFrame loaded: {df.shape[0]} rows, {df.shape[1]} columns")
-        scanner = DataScanner(df)
-        report = scanner.run_health_check()
-        clean_report = convert_numpy_types(report)
-
-        if isinstance(df.index, pd.DatetimeIndex):
-            preview_df = df.reset_index().replace({float('nan'): None})
-        else:
-            preview_df = df.copy().replace({float('nan'): None})
-        clean_report["dataset_preview"] = preview_df.to_dict(orient="records")
-        clean_report["has_previous_state"] = storage.exists(get_previous_dataset_key(request.file_id))
-        
+        has_previous_state = storage.exists(get_previous_dataset_key(request.file_id))
         dataset = db.query(Dataset).filter(Dataset.file_uuid == request.file_id).first()
-        clean_report["is_modified"] = dataset.is_modified if dataset else False
+        is_modified = dataset.is_modified if dataset else False
+        clean_report = build_scan_report(df, has_previous_state, is_modified)
         
         print(f"[SCAN] Scan completed successfully")
         return clean_report
@@ -150,7 +131,7 @@ def clean_data(
         cleaner.impute_column(col, method)
 
     for col, method in request.outlier_methods.items():
-        if method not in ['1', '2', '3']:
+        if method not in ['clip_iqr', 'mean', 'median', 'drop']:
             raise HTTPException(status_code=400, detail=f"Invalid outlier handling method for column {col}")
 
         cleaner.detect_and_handle_outliers(col, method)
@@ -179,38 +160,12 @@ def handle_outliers(
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty")
 
-    if request.column not in df.columns:
-        raise HTTPException(status_code=400, detail=f"Column '{request.column}' not found")
-
-    col_data = df[request.column]
-    if not np.issubdtype(col_data.dtype, np.number):
-        raise HTTPException(status_code=400, detail=f"Column '{request.column}' is not numeric")
-
-    df[request.column] = df[request.column].astype(float)
-    col_data = df[request.column]
-
     cache_previous_dataset(request.file_id)
 
-    Q1 = col_data.quantile(0.25)
-    Q3 = col_data.quantile(0.75)
-    IQR = Q3 - Q1
-    lower_bound = Q1 - 1.5 * IQR
-    upper_bound = Q3 + 1.5 * IQR
-
-    outlier_mask = (col_data < lower_bound) | (col_data > upper_bound)
-
-    if request.strategy == 'clip_iqr':
-        df[request.column] = np.clip(col_data, lower_bound, upper_bound)
-    elif request.strategy == 'mean':
-        mean_val = col_data.mean()
-        df.loc[outlier_mask, request.column] = mean_val
-    elif request.strategy == 'median':
-        median_val = col_data.median()
-        df.loc[outlier_mask, request.column] = median_val
-    elif request.strategy == 'drop':
-        df = df[~outlier_mask]
-    else:
-        raise HTTPException(status_code=400, detail="Invalid strategy")
+    try:
+        df = apply_outlier_strategy(df, request.column, request.strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if isinstance(df.index, pd.DatetimeIndex):
         df_to_save = df.copy()
@@ -236,58 +191,12 @@ def preview_outliers(
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty")
 
-    if request.column not in df.columns:
-        raise HTTPException(status_code=400, detail=f"Column '{request.column}' not found")
+    try:
+        preview = preview_outlier_strategy(df, request.column, request.strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    col_data = df[request.column]
-    if not np.issubdtype(col_data.dtype, np.number):
-        raise HTTPException(status_code=400, detail=f"Column '{request.column}' is not numeric")
-
-    series = col_data.astype(float)
-    q1 = series.quantile(0.25)
-    q3 = series.quantile(0.75)
-    iqr = q3 - q1
-    lower_bound = q1 - 1.5 * iqr
-    upper_bound = q3 + 1.5 * iqr
-    outlier_mask = (series < lower_bound) | (series > upper_bound)
-
-    after_series = series.copy()
-    if request.strategy == 'clip_iqr':
-        after_series = after_series.clip(lower=lower_bound, upper=upper_bound)
-    elif request.strategy == 'mean':
-        mean_val = series.mean()
-        after_series.loc[outlier_mask] = mean_val
-    elif request.strategy == 'median':
-        median_val = series.median()
-        after_series.loc[outlier_mask] = median_val
-    elif request.strategy == 'drop':
-        after_series.loc[outlier_mask] = np.nan
-    else:
-        raise HTTPException(status_code=400, detail="Invalid strategy")
-
-    if isinstance(df.index, pd.DatetimeIndex):
-        x_values = [ts.isoformat() for ts in df.index]
-    else:
-        x_values = [str(idx) for idx in range(len(df))]
-
-    before_values = [None if pd.isna(v) else float(v) for v in series.tolist()]
-    after_values = [None if pd.isna(v) else float(v) for v in after_series.tolist()]
-
-    max_points = 300
-    if len(x_values) > max_points:
-        indices = np.linspace(0, len(x_values) - 1, num=max_points, dtype=int)
-        indices = np.unique(indices)
-        x_values = [x_values[i] for i in indices]
-        before_values = [before_values[i] for i in indices]
-        after_values = [after_values[i] for i in indices]
-
-    return OutlierPreviewResponse(
-        column=request.column,
-        strategy=request.strategy,
-        x=x_values,
-        before=before_values,
-        after=after_values,
-    )
+    return OutlierPreviewResponse(**preview)
 
 @router.post("/handle-missing")
 def handle_missing(
@@ -303,21 +212,20 @@ def handle_missing(
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty")
 
-    if request.column not in df.columns:
-        raise HTTPException(status_code=400, detail=f"Column '{request.column}' not found")
-        
     cache_previous_dataset(request.file_id)
 
-    cleaner = DataCleaner(df)
-    cleaner.impute_column(request.column, request.strategy)
+    try:
+        updated_df = apply_missing_strategy(df, request.column, request.strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if isinstance(cleaner.df.index, pd.DatetimeIndex):
-        df_to_save = cleaner.df.copy()
+    if isinstance(updated_df.index, pd.DatetimeIndex):
+        df_to_save = updated_df.copy()
         if df_to_save.index.name is None:
             df_to_save.index.name = "Date"
         storage.write_csv(storage.join_key("uploads", file_path), df_to_save, include_index=True)
     else:
-        storage.write_csv(storage.join_key("uploads", file_path), cleaner.df, include_index=False)
+        storage.write_csv(storage.join_key("uploads", file_path), updated_df, include_index=False)
 
     return {"status": "success", "message": f"Successfully applied strategy {request.strategy} for missing values in {request.column}"}
 
@@ -335,42 +243,19 @@ def fix_timestamps(
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty")
 
-    scanner = DataScanner(df)
-    report = scanner.run_health_check()
-    datetime_column = scanner._get_datetime_column()
-    frequency = report.get("frequency", "Unknown")
-    if frequency == "Unknown":
-        raise HTTPException(status_code=400, detail="Frequency could not be inferred")
-
     cache_previous_dataset(request.file_id)
 
-    if isinstance(df.index, pd.DatetimeIndex):
-        datetime_index = df.index
-        working_df = df.copy()
-    elif datetime_column:
-        datetime_index = pd.to_datetime(df[datetime_column], errors="coerce")
-        working_df = df.copy()
-        working_df[datetime_column] = datetime_index
-        working_df = working_df.dropna(subset=[datetime_column])
-        working_df = working_df.set_index(datetime_column, drop=False)
-    else:
-        raise HTTPException(status_code=400, detail="Datetime column not found")
-
-    working_df = working_df.sort_index()
-    new_index = pd.date_range(start=working_df.index.min(), end=working_df.index.max(), freq=frequency)
-    updated_df = working_df.reindex(new_index)
-    date_column_name = datetime_column or updated_df.index.name or "Date"
-    updated_df[date_column_name] = updated_df.index
-
-    inserted_rows = int(len(new_index) - len(working_df.index.unique()))
+    try:
+        updated_df, inserted_rows, preview_records = fix_time_axis(df)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     storage.write_csv(storage.join_key("uploads", file_path), updated_df, include_index=False)
 
-    preview_df = updated_df.reset_index(drop=True).replace({float('nan'): None})
     return FixTimestampsResponse(
         status="success",
         inserted_rows=inserted_rows,
-        dataset_preview=preview_df.to_dict(orient="records"),
+        dataset_preview=preview_records,
     )
 
 
@@ -428,41 +313,12 @@ def preview_missing(
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty")
 
-    if request.column not in df.columns:
-        raise HTTPException(status_code=400, detail=f"Column '{request.column}' not found")
+    try:
+        preview = preview_missing_strategy(df, request.column, request.strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    col_data = df[request.column]
-    if not np.issubdtype(col_data.dtype, np.number):
-        raise HTTPException(status_code=400, detail=f"Column '{request.column}' is not numeric")
-
-    before_series = col_data.astype(float)
-    cleaner = DataCleaner(df.copy())
-    cleaner.impute_column(request.column, request.strategy)
-    after_series = cleaner.df[request.column].astype(float)
-
-    if isinstance(df.index, pd.DatetimeIndex):
-        x_values = [ts.isoformat() for ts in df.index]
-    else:
-        x_values = [str(idx) for idx in range(len(df))]
-
-    before_values = [None if pd.isna(v) else float(v) for v in before_series.tolist()]
-    after_values = [None if pd.isna(v) else float(v) for v in after_series.tolist()]
-
-    max_points = 300
-    if len(x_values) > max_points:
-        indices = np.linspace(0, len(x_values) - 1, num=max_points, dtype=int)
-        indices = np.unique(indices)
-        x_values = [x_values[i] for i in indices]
-        before_values = [before_values[i] for i in indices]
-        after_values = [after_values[i] for i in indices]
-
-    return MissingPreviewResponse(
-        column=request.column,
-        strategy=request.strategy,
-        x=x_values,
-        before=before_values,
-        after=after_values,
-    )
+    return MissingPreviewResponse(**preview)
 
 @router.get("/download/{file_id}")
 def download_dataset(

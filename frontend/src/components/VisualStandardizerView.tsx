@@ -183,6 +183,7 @@ export const VisualStandardizerView: React.FC = () => {
   const [plotPreviewUrl, setPlotPreviewUrl] = useState<string | null>(null);
   const [localPlotBase64, setLocalPlotBase64] = useState<string | null>(null);
   const [isPlotFullScreen, setIsPlotFullScreen] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const ensureLocalCsv = async () => {
@@ -539,7 +540,7 @@ export const VisualStandardizerView: React.FC = () => {
   };
 
   const handleGeneratePlot = async () => {
-    if (!file || !xAxis || resolvedYAxes.length === 0 || !selectedStyle || !outputFilename) {
+    if (!file || !xAxis || resolvedYAxes.length === 0 || !selectedStyle) {
       setError("Please fill all fields for plot generation");
       return;
     }
@@ -688,6 +689,7 @@ export const VisualStandardizerView: React.FC = () => {
       setIsLoading(false);
     }
   };
+
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(cleanedCode).then(() => {
@@ -920,15 +922,7 @@ export const VisualStandardizerView: React.FC = () => {
                         </span>
                       </div>
                     </div>
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-slate-700 mb-2">Output Filename</label>
-                      <input
-                        type="text"
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                        value={outputFilename}
-                        onChange={(e) => setOutputFilename(e.target.value)}
-                      />
-                    </div>
+
                   </div>
 
                   <div className="flex justify-end pt-4 border-t border-slate-100 mt-6">
@@ -1117,6 +1111,7 @@ export const VisualStandardizerView: React.FC = () => {
                   >
                     {isLoading ? 'Standardizing...' : 'Standardize Code'}
                   </button>
+
                </div>
 
                {cleanedCode && (

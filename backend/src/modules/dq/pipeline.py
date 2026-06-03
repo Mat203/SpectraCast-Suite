@@ -64,16 +64,27 @@ def run_dq_pipeline():
         print("ANOMALY HANDLING (Outliers detected)")
         print("-"*40)
         print("Select Outlier Handling Method:")
-        print("1. Smoothing (Exponential smoothing for the whole series)")
-        print("2. Delete & Interpolate (Replace outliers with interpolated values)")
-        print("3. Leave as it is")
+        print("1. IQR Clip (Winsorization)")
+        print("2. Replace with Mean")
+        print("3. Replace with Median")
+        print("4. Drop Outlier Rows")
 
         for col, count in report["outliers"].items():
             z_scores = np.abs(stats.zscore(cleaner.df[col], nan_policy='omit'))
             outlier_mask = z_scores > 3
         
-        choice = input(f"Method for '{col}' ({count} outliers) (1-3): ").strip()
-        cleaner.handle_outliers(col, choice, outlier_mask)
+        choice = input(f"Method for '{col}' ({count} outliers) (1-4): ").strip()
+        choice_map = {
+            "1": "clip_iqr",
+            "2": "mean",
+            "3": "median",
+            "4": "drop",
+        }
+        method = choice_map.get(choice)
+        if not method:
+            print("Invalid choice. Skipping.")
+        else:
+            cleaner.handle_outliers(col, method, outlier_mask)
 
     save_key = storage.join_key("outputs", f"cleaned_{filename}")
     storage.write_csv(save_key, cleaner.df, include_index=True)
