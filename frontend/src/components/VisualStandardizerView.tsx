@@ -97,7 +97,6 @@ export const VisualStandardizerView: React.FC = () => {
   const setYAxes = (value: YAxisAssignment[]) => setVisualStandardizer({ yAxes: value });
   const setPlotType = (value: string) => setVisualStandardizer({ plotType: value });
   const setSelectedStyle = (value: string) => setVisualStandardizer({ selectedStyle: value });
-  const setOutputFilename = (value: string) => setVisualStandardizer({ outputFilename: value });
   const setCodeStyle = (value: string) => setVisualStandardizer({ codeStyle: value });
   const setRawCode = (value: string) => setVisualStandardizer({ rawCode: value });
 
