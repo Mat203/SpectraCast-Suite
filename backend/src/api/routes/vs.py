@@ -35,6 +35,32 @@ def get_styles(current_user: User = Depends(get_current_user)):
     return StylesResponse(styles=styles)
 
 
+@router.get("/styles/{style_name}")
+def get_style_config(
+    style_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    from backend.src.modules.vs.style_manager import StyleManager
+    import json
+    
+    manager = StyleManager()
+    safe_name = style_name.strip().lower().replace(" ", "_")
+    if safe_name.endswith(".json"):
+        safe_name = safe_name[:-5]
+        
+    file_path = manager.config_dir / f"{safe_name}.json"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Style '{style_name}' not found")
+        
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        return config
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 @router.post("/generate", response_model=GeneratePlotResponse)
 def generate_plot(
     request: GeneratePlotRequest,

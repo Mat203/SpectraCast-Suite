@@ -52,3 +52,18 @@ def test_vs_generate_plot(auth_client, db_session, test_user, fake_storage, monk
 
     assert response.status_code == 200
     assert response.json()["status"] == "success"
+
+
+def test_get_style_config(auth_client):
+    response = auth_client.get("/api/vs/styles/corporate")
+    assert response.status_code == 200
+    config = response.json()
+    assert "axes.grid" in config
+    assert config["axes.grid"] is True
+
+
+def test_get_style_config_not_found(auth_client):
+    response = auth_client.get("/api/vs/styles/nonexistent_style")
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
