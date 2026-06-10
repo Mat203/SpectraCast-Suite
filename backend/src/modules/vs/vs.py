@@ -21,7 +21,8 @@ class PlotEngine:
             with open(config_path, 'r', encoding='utf-8') as f:
                 self.style_dict = json.load(f)
             plt.style.use('default')
-            plt.rcParams.update(self.style_dict)
+            matplotlib_params = {k: v for k, v in self.style_dict.items() if not k.startswith("custom.")}
+            plt.rcParams.update(matplotlib_params)
         except Exception as e:
             print(f"Error applying style: {e}")
 
@@ -50,36 +51,43 @@ class PlotEngine:
         all_cols = primary_cols + secondary_cols
         ax2 = ax.twinx() if secondary_cols else None
 
+        primary_colors = self.style_dict.get("custom.primary_colors", ["#1f77b4", "#2ca02c", "#9467bd", "#00bcd4", "#4caf50"])
+        secondary_colors = self.style_dict.get("custom.secondary_colors", ["#ff7f0e", "#d62728", "#8c564b", "#e377c2", "#ff9800"])
+
         if chart_type == '2':
             indices = np.arange(len(x_data))
             total = max(len(all_cols), 1)
             bar_width = 0.8 / total
             offset = -((total - 1) / 2) * bar_width
 
-            for y_col in primary_cols:
-                ax.bar(indices + offset, df[y_col], width=bar_width, label=y_col)
+            for i, y_col in enumerate(primary_cols):
+                color = primary_colors[i % len(primary_colors)]
+                ax.bar(indices + offset, df[y_col], width=bar_width, label=y_col, color=color)
                 offset += bar_width
 
             if ax2:
-                for y_col in secondary_cols:
-                    ax2.bar(indices + offset, df[y_col], width=bar_width, label=f"{y_col} (secondary)", alpha=0.8)
+                for i, y_col in enumerate(secondary_cols):
+                    color = secondary_colors[i % len(secondary_colors)]
+                    ax2.bar(indices + offset, df[y_col], width=bar_width, label=f"{y_col} (secondary)", alpha=0.8, color=color)
                     offset += bar_width
 
             ax.set_xticks(indices)
             labels = [d.strftime('%Y-%m') if hasattr(d, 'strftime') else str(d) for d in x_data]
         else:
-            for y_col in primary_cols:
+            for i, y_col in enumerate(primary_cols):
+                color = primary_colors[i % len(primary_colors)]
                 if chart_type == '3':
-                    ax.scatter(x_data, df[y_col], label=y_col)
+                    ax.scatter(x_data, df[y_col], label=y_col, color=color)
                 else:
-                    ax.plot(x_data, df[y_col], label=y_col)
+                    ax.plot(x_data, df[y_col], label=y_col, color=color)
 
             if ax2:
-                for y_col in secondary_cols:
+                for i, y_col in enumerate(secondary_cols):
+                    color = secondary_colors[i % len(secondary_colors)]
                     if chart_type == '3':
-                        ax2.scatter(x_data, df[y_col], label=f"{y_col} (secondary)")
+                        ax2.scatter(x_data, df[y_col], label=f"{y_col} (secondary)", color=color)
                     else:
-                        ax2.plot(x_data, df[y_col], label=f"{y_col} (secondary)")
+                        ax2.plot(x_data, df[y_col], label=f"{y_col} (secondary)", color=color)
 
 
         title_cols = ", ".join(all_cols) if all_cols else "y"

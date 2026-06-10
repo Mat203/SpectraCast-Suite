@@ -567,6 +567,17 @@ export const VisualStandardizerView: React.FC = () => {
     try {
       if (isLocalMode) {
         const csvData = await ensureLocalCsv();
+        let styleConfig = {};
+        if (selectedStyle) {
+          try {
+            const styleRes = await apiFetch(`/api/vs/styles/${selectedStyle}`);
+            if (styleRes.ok) {
+              styleConfig = await styleRes.json();
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
         const localResult = await executeHybrid(
           null,
           {
@@ -578,6 +589,7 @@ export const VisualStandardizerView: React.FC = () => {
             x_label: xLabel,
             y_label: yLabel,
             y2_label: y2Label,
+            style_config: styleConfig,
           },
           { code: LOCAL_VS_PLOT_CODE, packages: ['matplotlib'] },
         );

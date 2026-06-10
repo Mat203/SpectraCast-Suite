@@ -12,6 +12,24 @@ def build_plot_source_code(
     y_label: str = "",
     y2_label: str = "",
 ) -> str:
+    import json
+    from pathlib import Path
+
+    style_dict = {}
+    if style_name:
+        style_filename = style_name if style_name.endswith('.json') else f"{style_name}.json"
+        config_path = Path(__file__).resolve().parents[3] / "style_config" / style_filename
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                style_dict = json.load(f)
+        except Exception:
+            pass
+
+    primary_colors = style_dict.get("custom.primary_colors", ["#1f77b4", "#2ca02c", "#9467bd", "#00bcd4", "#4caf50"])
+    secondary_colors = style_dict.get("custom.secondary_colors", ["#ff7f0e", "#d62728", "#8c564b", "#e377c2", "#ff9800"])
+    primary_colors_str = ", ".join(f"'{c}'" for c in primary_colors)
+    secondary_colors_str = ", ".join(f"'{c}'" for c in secondary_colors)
+
     safe_secondary = secondary_cols
     safe_primary = primary_cols or ([] if safe_secondary else ["y"])
     primary_literal = ", ".join(f"'{col}'" for col in safe_primary)
@@ -43,6 +61,11 @@ def build_plot_source_code(
         lines.append("x = df.index")
 
     lines.append("")
+    lines.extend([
+        f"primary_colors = [{primary_colors_str}]",
+        f"secondary_colors = [{secondary_colors_str}]",
+        "",
+    ])
     lines.append("fig, ax = plt.subplots()")
     if safe_secondary:
         lines.append("ax2 = ax.twinx()")
@@ -54,37 +77,43 @@ def build_plot_source_code(
             f"total = max({len(all_cols)}, 1)",
             "bar_width = 0.8 / total",
             "offset = -((total - 1) / 2) * bar_width",
-            f"for y_col in [{primary_literal}]:",
-            "    ax.bar(indices + offset, df[y_col], width=bar_width, label=y_col)",
+            f"for i, y_col in enumerate([{primary_literal}]):",
+            "    color = primary_colors[i % len(primary_colors)]",
+            "    ax.bar(indices + offset, df[y_col], width=bar_width, label=y_col, color=color)",
             "    offset += bar_width",
         ])
         if safe_secondary:
             lines.extend([
-                f"for y_col in [{secondary_literal}]:",
-                "    ax2.bar(indices + offset, df[y_col], width=bar_width, label=f'{y_col} (secondary)', alpha=0.8)",
+                f"for i, y_col in enumerate([{secondary_literal}]):",
+                "    color = secondary_colors[i % len(secondary_colors)]",
+                "    ax2.bar(indices + offset, df[y_col], width=bar_width, label=f'{y_col} (secondary)', alpha=0.8, color=color)",
                 "    offset += bar_width",
             ])
         lines.append("ax.set_xticks(indices)")
         lines.append("ax.set_xticklabels(x, rotation=270, ha='right')")
     elif chart_type == '3':
         lines.extend([
-            f"for y_col in [{primary_literal}]:",
-            "    ax.scatter(x, df[y_col], label=y_col)",
+            f"for i, y_col in enumerate([{primary_literal}]):",
+            "    color = primary_colors[i % len(primary_colors)]",
+            "    ax.scatter(x, df[y_col], label=y_col, color=color)",
         ])
         if safe_secondary:
             lines.extend([
-                f"for y_col in [{secondary_literal}]:",
-                "    ax2.scatter(x, df[y_col], label=f'{y_col} (secondary)')",
+                f"for i, y_col in enumerate([{secondary_literal}]):",
+                "    color = secondary_colors[i % len(secondary_colors)]",
+                "    ax2.scatter(x, df[y_col], label=f'{y_col} (secondary)', color=color)",
             ])
     else:
         lines.extend([
-            f"for y_col in [{primary_literal}]:",
-            "    ax.plot(x, df[y_col], label=y_col)",
+            f"for i, y_col in enumerate([{primary_literal}]):",
+            "    color = primary_colors[i % len(primary_colors)]",
+            "    ax.plot(x, df[y_col], label=y_col, color=color)",
         ])
         if safe_secondary:
             lines.extend([
-                f"for y_col in [{secondary_literal}]:",
-                "    ax2.plot(x, df[y_col], label=f'{y_col} (secondary)')",
+                f"for i, y_col in enumerate([{secondary_literal}]):",
+                "    color = secondary_colors[i % len(secondary_colors)]",
+                "    ax2.plot(x, df[y_col], label=f'{y_col} (secondary)', color=color)",
             ])
 
     default_title = ", ".join(all_cols) + " vs " + (x_col or "Date")

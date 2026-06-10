@@ -14,5 +14,7 @@
     "figure.figsize": [10, 5],
     "figure.dpi": 300,
     "lines.linewidth": 2,
-    "lines.markersize": 5
+    "lines.markersize": 5,
+    "custom.primary_colors": ["#003f5c", "#2f4b7c", "#665191", "#a05195"],
+    "custom.secondary_colors": ["#d45087", "#f95d6a", "#ff7c43", "#ffa600"]
 }

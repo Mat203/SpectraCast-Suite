@@ -21,5 +21,7 @@
     "lines.linewidth": 2.5,
     "lines.markersize": 6,
     "xtick.color": "#A0A0A0",
-    "ytick.color": "#A0A0A0"
+    "ytick.color": "#A0A0A0",
+    "custom.primary_colors": ["#00E5FF", "#00E676", "#D500F9", "#FFEA00"],
+    "custom.secondary_colors": ["#FF1744", "#FF9100", "#FF3D00", "#FF007F"]
 }
