@@ -7,6 +7,10 @@ def build_plot_source_code(
     secondary_cols: List[str],
     chart_type: str,
     style_name: str,
+    title: str = "",
+    x_label: str = "",
+    y_label: str = "",
+    y2_label: str = "",
 ) -> str:
     safe_secondary = secondary_cols
     safe_primary = primary_cols or ([] if safe_secondary else ["y"])
@@ -83,13 +87,14 @@ def build_plot_source_code(
                 "    ax2.plot(x, df[y_col], label=f'{y_col} (secondary)')",
             ])
 
-    lines.extend([
-        "ax.set_title('" + ", ".join(all_cols) + " vs " + (x_col or "Date") + "')",
-        "ax.set_xlabel('" + (x_col or "Date") + "')",
-        "ax.set_ylabel('Primary Values' if " + str(bool(primary_cols)) + " else 'Values')",
-    ])
+    default_title = ", ".join(all_cols) + " vs " + (x_col or "Date")
+    lines.append("ax.set_title('" + (title if title else default_title) + "')")
+    lines.append("ax.set_xlabel('" + (x_label if x_label else (x_col or "Date")) + "')")
+    
+    default_ylabel = "Primary Values" if primary_cols else "Values"
+    lines.append("ax.set_ylabel('" + (y_label if y_label else default_ylabel) + "')")
     if safe_secondary:
-        lines.append("ax2.set_ylabel('Secondary Values')")
+        lines.append("ax2.set_ylabel('" + (y2_label if y2_label else "Secondary Values") + "')")
 
     lines.extend([
         "handles, labels = ax.get_legend_handles_labels()",

@@ -31,7 +31,7 @@ def test_vs_generate_plot(auth_client, db_session, test_user, fake_storage, monk
     key = fake_storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
     fake_storage.put_text(key, "date,price\n2024-01-01,100\n2024-01-02,101\n")
 
-    def fake_generate_plot(self, df, x_col, y_cols, chart_type, filename, secondary_cols=None):
+    def fake_generate_plot(self, df, x_col, y_cols, chart_type, filename, secondary_cols=None, *args, **kwargs):
         output = tmp_path / filename
         output.write_bytes(b"png")
         return output

@@ -14,9 +14,7 @@ import { UserProvider, useUser } from './lib/userContext.tsx'
 import { ComputeModeProvider } from './lib/ComputeModeContext.jsx'
 import { DeviceBlocker } from './components/DeviceBlocker'
 
-const Dashboard = () => {
-  const [activeModule, setActiveModule] = useState<ModuleKey>('dq')
-
+const Dashboard = ({ activeModule, setActiveModule }: { activeModule: ModuleKey; setActiveModule: (module: ModuleKey) => void }) => {
   return (
     <Layout activeModule={activeModule} onModuleChange={setActiveModule}>
       {activeModule === 'dq' && <DataQualityView />}
@@ -26,9 +24,7 @@ const Dashboard = () => {
   )
 }
 
-const ProfilePage = () => {
-  const [activeModule, setActiveModule] = useState<ModuleKey>('dq')
-
+const ProfilePage = ({ activeModule, setActiveModule }: { activeModule: ModuleKey; setActiveModule: (module: ModuleKey) => void }) => {
   return (
     <Layout activeModule={activeModule} onModuleChange={setActiveModule}>
       <Profile />
@@ -36,7 +32,7 @@ const ProfilePage = () => {
   )
 }
 
-const DashboardRoute = () => {
+const DashboardRoute = ({ activeModule, setActiveModule }: { activeModule: ModuleKey; setActiveModule: (module: ModuleKey) => void }) => {
   const { user, isLoading, refreshUser } = useUser()
 
   useEffect(() => {
@@ -57,7 +53,7 @@ const DashboardRoute = () => {
     return <Navigate to="/welcome" replace />
   }
 
-  return <Dashboard />
+  return <Dashboard activeModule={activeModule} setActiveModule={setActiveModule} />
 }
 
 const WelcomeRoute = () => {
@@ -85,6 +81,8 @@ const WelcomeRoute = () => {
 }
 
 function App() {
+  const [activeModule, setActiveModule] = useState<ModuleKey>('dq')
+
   return (
     <DeviceBlocker>
       <UserProvider>
@@ -106,7 +104,7 @@ function App() {
                 path="/app"
                 element={
                   <ProtectedRoute>
-                    <DashboardRoute />
+                    <DashboardRoute activeModule={activeModule} setActiveModule={setActiveModule} />
                   </ProtectedRoute>
                 }
               />
@@ -114,7 +112,7 @@ function App() {
                 path="/profile"
                 element={
                   <ProtectedRoute>
-                    <ProfilePage />
+                    <ProfilePage activeModule={activeModule} setActiveModule={setActiveModule} />
                   </ProtectedRoute>
                 }
               />

@@ -22,6 +22,10 @@ class GeneratePlotRequest(BaseModel):
     chart_type: str = "1"
     output_filename: str = ""
     is_cleaned: bool = False
+    title: str = ""
+    x_label: str = ""
+    y_label: str = ""
+    y2_label: str = ""
 
 class GeneratePlotResponse(BaseModel):
     status: str

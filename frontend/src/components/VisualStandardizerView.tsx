@@ -55,6 +55,10 @@ export const VisualStandardizerView: React.FC = () => {
     outputFilename,
     codeStyle,
     rawCode,
+    title,
+    xLabel,
+    yLabel,
+    y2Label,
   } = visualStandardizer;
 
   const normalizeYAxes = (value: unknown): YAxisAssignment[] => {
@@ -99,6 +103,10 @@ export const VisualStandardizerView: React.FC = () => {
   const setSelectedStyle = (value: string) => setVisualStandardizer({ selectedStyle: value });
   const setCodeStyle = (value: string) => setVisualStandardizer({ codeStyle: value });
   const setRawCode = (value: string) => setVisualStandardizer({ rawCode: value });
+  const setTitle = (value: string) => setVisualStandardizer({ title: value });
+  const setXLabel = (value: string) => setVisualStandardizer({ xLabel: value });
+  const setYLabel = (value: string) => setVisualStandardizer({ yLabel: value });
+  const setY2Label = (value: string) => setVisualStandardizer({ y2Label: value });
 
   const toggleYAxis = (value: string) => {
     if (!value) {
@@ -566,6 +574,10 @@ export const VisualStandardizerView: React.FC = () => {
             x_col: xAxis,
             y_axes: resolvedYAxes,
             chart_type: chartType,
+            title,
+            x_label: xLabel,
+            y_label: yLabel,
+            y2_label: y2Label,
           },
           { code: LOCAL_VS_PLOT_CODE, packages: ['matplotlib'] },
         );
@@ -619,7 +631,11 @@ export const VisualStandardizerView: React.FC = () => {
           x: xAxis,
           y_axes: resolvedYAxes,
           chart_type: chartType,
-          output_filename: outputFilename
+          output_filename: outputFilename,
+          title,
+          x_label: xLabel,
+          y_label: yLabel,
+          y2_label: y2Label
         }),
       });
 
@@ -922,6 +938,57 @@ export const VisualStandardizerView: React.FC = () => {
                       </div>
                     </div>
 
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-4 mt-6">
+                    <h4 className="text-sm font-semibold text-slate-800 mb-4">Chart Customization</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 mb-1">Chart Title</label>
+                        <input
+                          type="text"
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          placeholder="e.g. Sales vs Date"
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 mb-1">X-Axis Label</label>
+                        <input
+                          type="text"
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          placeholder="e.g. Timeline"
+                          value={xLabel}
+                          onChange={(e) => setXLabel(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 mb-1">Y-Axis Label (Primary)</label>
+                        <input
+                          type="text"
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                          placeholder="e.g. Price ($)"
+                          value={yLabel}
+                          onChange={(e) => setYLabel(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 mb-1">Y-Axis Label (Secondary)</label>
+                        <input
+                          type="text"
+                          className={`w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 ${
+                            !resolvedYAxes.some((axis) => axis.axis === 'secondary')
+                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                              : 'bg-white'
+                          }`}
+                          placeholder="e.g. Volume"
+                          disabled={!resolvedYAxes.some((axis) => axis.axis === 'secondary')}
+                          value={y2Label}
+                          onChange={(e) => setY2Label(e.target.value)}
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex justify-end pt-4 border-t border-slate-100 mt-6">

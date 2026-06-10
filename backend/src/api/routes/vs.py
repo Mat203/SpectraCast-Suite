@@ -109,6 +109,10 @@ def generate_plot(
         chart_type=chart_type,
         filename=output_filename,
         secondary_cols=secondary_cols,
+        title=request.title,
+        x_label=request.x_label,
+        y_label=request.y_label,
+        y2_label=request.y2_label,
     )
 
     if not output_path or not output_path.exists():
@@ -124,6 +128,10 @@ def generate_plot(
         secondary_cols=secondary_cols,
         chart_type=chart_type,
         style_name=request.style_filename or request.style_name,
+        title=request.title,
+        x_label=request.x_label,
+        y_label=request.y_label,
+        y2_label=request.y2_label,
     )
 
     return GeneratePlotResponse(

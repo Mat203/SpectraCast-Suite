@@ -92,6 +92,10 @@ interface VisualStandardizerState {
   outputFilename: string;
   codeStyle: string;
   rawCode: string;
+  title: string;
+  xLabel: string;
+  yLabel: string;
+  y2Label: string;
 }
 
 interface VisualStandardizerUiState {
@@ -218,6 +222,10 @@ const initialState = {
     outputFilename: 'plot.png',
     codeStyle: '',
     rawCode: '',
+    title: '',
+    xLabel: '',
+    yLabel: '',
+    y2Label: '',
   },
   visualStandardizerUi: {
     isDragging: false,

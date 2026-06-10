@@ -737,6 +737,10 @@ if df is None:
 
 x_col = payload.get("x_col") or payload.get("x")
 chart_type = payload.get("chart_type") or payload.get("plot_type")
+title = payload.get("title")
+x_label = payload.get("x_label")
+y_label = payload.get("y_label")
+y2_label = payload.get("y2_label")
 
 y_axes = payload.get("y_axes") or []
 primary_cols = []
@@ -799,11 +803,11 @@ else:
         for col in secondary_cols:
             ax2.plot(x_data, df[col], label=f"{col} (secondary)")
 
-ax.set_title(", ".join(all_cols) + " vs " + (x_col or "Date"))
-ax.set_xlabel(x_col or "Date")
-ax.set_ylabel("Primary Values" if primary_cols else "Values")
+ax.set_title(title if title else (", ".join(all_cols) + " vs " + (x_col or "Date")))
+ax.set_xlabel(x_label if x_label else (x_col or "Date"))
+ax.set_ylabel(y_label if y_label else ("Primary Values" if primary_cols else "Values"))
 if ax2 and secondary_cols:
-    ax2.set_ylabel("Secondary Values")
+    ax2.set_ylabel(y2_label if y2_label else "Secondary Values")
 
 handles, labels = ax.get_legend_handles_labels()
 if ax2:

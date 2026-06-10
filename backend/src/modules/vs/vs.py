@@ -2,6 +2,7 @@ import json
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -32,6 +33,10 @@ class PlotEngine:
         chart_type: str,
         filename: str,
         secondary_cols: list | None = None,
+        title: str = None,
+        x_label: str = None,
+        y_label: str = None,
+        y2_label: str = None,
     ):
         fig, ax = plt.subplots()
 
@@ -62,7 +67,6 @@ class PlotEngine:
 
             ax.set_xticks(indices)
             labels = [d.strftime('%Y-%m') if hasattr(d, 'strftime') else str(d) for d in x_data]
-            ax.set_xticklabels(labels, rotation=270, ha='right')
         else:
             for y_col in primary_cols:
                 if chart_type == '3':
@@ -77,15 +81,13 @@ class PlotEngine:
                     else:
                         ax2.plot(x_data, df[y_col], label=f"{y_col} (secondary)")
 
-            if pd.api.types.is_datetime64_any_dtype(x_data):
-                plt.setp(ax.get_xticklabels(), rotation=270, ha="right")
 
         title_cols = ", ".join(all_cols) if all_cols else "y"
-        ax.set_title(f"{title_cols} vs {x_col or 'Date'}", pad=15)
-        ax.set_xlabel(x_col or "Date")
-        ax.set_ylabel("Primary Values" if primary_cols else "Values")
+        ax.set_title(title if title else f"{title_cols} vs {x_col or 'Date'}", pad=15)
+        ax.set_xlabel(x_label if x_label else (x_col or "Date"))
+        ax.set_ylabel(y_label if y_label else ("Primary Values" if primary_cols else "Values"))
         if ax2:
-            ax2.set_ylabel("Secondary Values")
+            ax2.set_ylabel(y2_label if y2_label else "Secondary Values")
 
         handles, labels = ax.get_legend_handles_labels()
         if ax2:
@@ -93,6 +95,9 @@ class PlotEngine:
             handles += handles2
             labels += labels2
         ax.legend(handles, labels, frameon=False)
+
+        ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=15))
+        fig.autofmt_xdate(rotation=45, ha='right')
         
         output_path = self.output_dir / filename
         fig.tight_layout()
