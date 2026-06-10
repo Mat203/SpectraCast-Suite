@@ -33,6 +33,7 @@ export const Profile: React.FC = () => {
   const [isValidatingKey, setIsValidatingKey] = useState(false);
   const [isLlmInitialized, setIsLlmInitialized] = useState(false);
   const [chartUrls, setChartUrls] = useState<Record<string, string>>({});
+  const [deletingChartId, setDeletingChartId] = useState<string | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -122,6 +123,48 @@ export const Profile: React.FC = () => {
       await downloadFile(`/api/vs/download/${chartFilename}`, chartFilename);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed.');
+    }
+  };
+
+  const handleDeleteChart = async (fileId: string, chartFilename: string) => {
+    if (!window.confirm('Delete this chart? This action cannot be undone.')) {
+      return;
+    }
+
+    setError(null);
+    setDeletingChartId(fileId);
+
+    try {
+      const response = await apiFetch(`/api/vs/plot/${chartFilename}`, { method: 'DELETE' });
+      if (!response.ok) {
+        throw new Error(await extractApiError(response, 'Delete failed'));
+      }
+
+      setProfile((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          datasets: prev.datasets.map((dataset) =>
+            dataset.file_id === fileId
+              ? { ...dataset, has_chart: false, chart_filename: null }
+              : dataset
+          ),
+        };
+      });
+
+      setChartUrls((prev) => {
+        const next = { ...prev };
+        const url = next[fileId];
+        if (url && url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+        delete next[fileId];
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed.');
+    } finally {
+      setDeletingChartId(null);
     }
   };
 
@@ -548,10 +591,18 @@ export const Profile: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleDownloadChart(dataset.chart_filename || '')}
-                          disabled={!dataset.chart_filename}
+                          disabled={!dataset.chart_filename || deletingChartId === dataset.file_id}
                           className="w-full inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          Download Chart
+                          Download
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteChart(dataset.file_id, dataset.chart_filename || '')}
+                          disabled={!dataset.chart_filename || deletingChartId === dataset.file_id}
+                          className="w-full inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {deletingChartId === dataset.file_id ? 'Deleting...' : 'Delete'}
                         </button>
                       </div>
                     </div>

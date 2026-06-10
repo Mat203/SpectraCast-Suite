@@ -67,3 +67,24 @@ def test_get_style_config_not_found(auth_client):
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
+
+def test_vs_delete_plot(auth_client, db_session, test_user, fake_storage, monkeypatch):
+    from backend.src.api.routes import vs
+    from backend.src.api.db_models import Dataset
+
+    file_id = "file-delete"
+    dataset = Dataset(user_id=test_user.id, file_uuid=file_id)
+    db_session.add(dataset)
+    db_session.commit()
+
+    filename = f"plot_{file_id}.png"
+    key = fake_storage.join_key("outputs", filename)
+    fake_storage.put_text(key, "fake plot image")
+
+    monkeypatch.setattr(vs, "storage", fake_storage)
+
+    response = auth_client.delete(f"/api/vs/plot/{filename}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert not fake_storage.exists(key)
+

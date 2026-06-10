@@ -146,6 +146,22 @@ def get_plot(
 
     return StreamingResponse(storage.stream_object(key), media_type="image/png")
 
+
+@router.delete("/plot/{filename}")
+def delete_plot(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_dataset_owner_for_filename(db, current_user.id, filename)
+    key = storage.join_key("outputs", filename)
+
+    if not storage.exists(key):
+        raise HTTPException(status_code=404, detail="Plot not found")
+
+    storage.delete(key)
+    return {"status": "success", "message": "Plot deleted"}
+
 @router.get("/download/{filename}")
 def download_plot(
     filename: str,
