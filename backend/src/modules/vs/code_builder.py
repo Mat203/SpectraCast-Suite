@@ -134,8 +134,18 @@ def build_plot_source_code(
             "handles += handles2",
             "labels += labels2",
         ])
+    lines.append("ax.legend(handles, labels, frameon=False)")
+    if safe_secondary:
+        lines.extend([
+            "y1_min, y1_max = ax.get_ylim()",
+            "y2_min, y2_max = ax2.get_ylim()",
+            "if (y1_min < 0 < y1_max) or (y2_min < 0 < y2_max):",
+            "    max_abs1 = max(abs(y1_min), abs(y1_max))",
+            "    ax.set_ylim(-max_abs1, max_abs1)",
+            "    max_abs2 = max(abs(y2_min), abs(y2_max))",
+            "    ax2.set_ylim(-max_abs2, max_abs2)",
+        ])
     lines.extend([
-        "ax.legend(handles, labels, frameon=False)",
         "plt.tight_layout()",
         "plt.show()",
     ])
