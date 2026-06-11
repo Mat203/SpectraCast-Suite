@@ -14,11 +14,12 @@
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
+    "posthog-js": "^1.386.3",
     "pyodide": "^0.26.1",
-    "zustand": "^5.0.9",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router-dom": "^6.30.3"
+    "react-router-dom": "^6.30.3",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -44,6 +45,6 @@
     "vitest": "^3.2.4"
   },
   "overrides": {
-  "vite": "$vite"
+    "vite": "$vite"
   }
 }

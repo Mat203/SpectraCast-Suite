@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import posthog from 'posthog-js';
 import { apiFetch, downloadFile } from '../lib/api';
 import { STRATEGY_DESCRIPTIONS } from '../lib/outlierStrategies';
 import type { OutlierStrategyKey } from '../lib/outlierStrategies';
@@ -638,6 +639,12 @@ export const DataQualityView: React.FC = () => {
         throw new Error(errorData.detail || 'Failed to handle outliers');
       }
 
+      posthog.capture('dq_strategy_applied', {
+        module_type: 'outliers',
+        chosen_strategy: outlierStrategy,
+        recommended_strategy: report?.outlier_strategy_recommendations?.[selectedOutlierCol]?.strategy || null,
+        dataset_size_rows: report?.rows || 0
+      });
       setIsOutlierModalOpen(false);
       await handleScan(true);
 
@@ -767,6 +774,12 @@ export const DataQualityView: React.FC = () => {
         throw new Error(errorData.detail || 'Failed to handle missing values');
       }
 
+      posthog.capture('dq_strategy_applied', {
+        module_type: 'imputation',
+        chosen_strategy: missingStrategy,
+        recommended_strategy: report?.missing_value_strategy_recommendations?.[selectedMissingCol]?.strategy || null,
+        dataset_size_rows: report?.rows || 0
+      });
       setIsMissingModalOpen(false);
       await handleScan(true);
 

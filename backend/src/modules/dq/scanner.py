@@ -233,7 +233,7 @@ class DataScanner:
             strategy_label = "ffill"
             reasoning = "Financial pricing favors forward fill to avoid look-ahead bias and artificial trends."
             
-        elif valid_low_volatility or autocorr_lag1 > 0.4:
+        elif valid_low_volatility:
             strategy_code = "1"
             strategy_label = "linear"
             reasoning = "Smooth trend continuity or low volatility make linear interpolation reliable."
