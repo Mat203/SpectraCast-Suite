@@ -1,11 +1,10 @@
-import os
 import sys
-from pathlib import Path
+import os
 import numpy as np
 from scipy import stats
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_dir, '../../../../'))
+project_root = os.path.abspath(os.path.join(current_dir, "../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -13,6 +12,7 @@ from backend.src.core.loader import DataLoader
 from backend.src.api.services.storage import StorageService
 from backend.src.modules.dq.scanner import DataScanner
 from backend.src.modules.dq.cleaner import DataCleaner
+
 
 def run_dq_pipeline():
     print("\n" + "="*40)
@@ -37,7 +37,7 @@ def run_dq_pipeline():
         return
 
     cleaner = DataCleaner(df)
-    
+
     if report['missing_dates_count'] > 0:
         align = input("\nDo you want to align the index and insert missing dates? (y/n): ").strip().lower()
         if align == 'y':
@@ -53,11 +53,10 @@ def run_dq_pipeline():
     print("7. Leave as it is")
 
     cols_with_nans = cleaner.df.columns[cleaner.df.isna().any()].tolist()
-    
+
     for col in cols_with_nans:
         method = input(f"Method for '{col}' (1-7): ").strip()
         cleaner.impute_column(col, method)
-
 
     if report["outliers"]:
         print("\n" + "-"*40)
@@ -69,26 +68,28 @@ def run_dq_pipeline():
         print("3. Replace with Median")
         print("4. Drop Outlier Rows")
 
-        for col, count in report["outliers"].items():
-            z_scores = np.abs(stats.zscore(cleaner.df[col], nan_policy='omit'))
-            outlier_mask = z_scores > 3
-        
-        choice = input(f"Method for '{col}' ({count} outliers) (1-4): ").strip()
         choice_map = {
             "1": "clip_iqr",
             "2": "mean",
             "3": "median",
             "4": "drop",
         }
-        method = choice_map.get(choice)
-        if not method:
-            print("Invalid choice. Skipping.")
-        else:
-            cleaner.handle_outliers(col, method, outlier_mask)
+
+        for col, count in report["outliers"].items():
+            z_scores = np.abs(stats.zscore(cleaner.df[col], nan_policy='omit'))
+            outlier_mask = z_scores > 3
+
+            choice = input(f"Method for '{col}' ({count} outliers) (1-4): ").strip()
+            method = choice_map.get(choice)
+            if not method:
+                print("Invalid choice. Skipping.")
+            else:
+                cleaner.handle_outliers(col, method, outlier_mask)
 
     save_key = storage.join_key("outputs", f"cleaned_{filename}")
     storage.write_csv(save_key, cleaner.df, include_index=True)
     print(f"\n[*] Cleaned dataset saved to 's3://{storage.bucket}/{save_key}'")
+
 
 if __name__ == "__main__":
     run_dq_pipeline()

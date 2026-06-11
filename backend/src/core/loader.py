@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from typing import Optional
 
 from backend.src.api.services.storage import StorageService
@@ -28,7 +29,6 @@ class DataLoader:
                 print(f"Warning: Файл '{filename}' порожній.")
                 return None
 
-            import numpy as np
             df = df.replace(r'(?i)^\s*(nan|none|null|na)?\s*$', np.nan, regex=True)
             for col in df.columns:
                 if df[col].dtype == 'object' or pd.api.types.is_string_dtype(df[col]):

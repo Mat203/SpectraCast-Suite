@@ -363,13 +363,14 @@ export const useAppStore = create<AppStoreState>()(
       name: 'spectracast_app_state',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
+        // Active dataset metadata (file object excluded — not serializable)
         activeDataset: { ...state.activeDataset, file: null },
+        // User strategy/column preferences only — NOT error/loading/preview state
         dataQuality: state.dataQuality,
-        dataQualityUi: state.dataQualityUi,
+        // Leading indicators form choices
         leadingIndicators: state.leadingIndicators,
-        leadingIndicatorsUi: state.leadingIndicatorsUi,
+        // Visual standardizer user choices (axis, style, labels, etc.)
         visualStandardizer: state.visualStandardizer,
-        visualStandardizerUi: state.visualStandardizerUi,
       }),
     },
   ),
