@@ -21,7 +21,7 @@ export const CookieConsentBanner: React.FC = () => {
     <div className="fixed bottom-0 left-0 right-0 z-20 bg-slate-900 text-white p-4 md:p-6 shadow-lg">
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <p className="text-sm md:text-base leading-relaxed">
-          We use strictly necessary cookies to keep you logged in and ensure the app functions correctly. We do not use marketing or tracking cookies.
+          We use strictly necessary cookies to keep you logged in. We also collect anonymized data quality strategy statistics to improve recommendations. No marketing trackers are used, and local-mode sessions are never tracked.
         </p>
         <button
           onClick={handleAccept}
