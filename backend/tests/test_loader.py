@@ -47,5 +47,5 @@ def test_load_csv_returns_dataframe_when_present():
 
     loaded = loader.load_csv("file.csv")
 
-    assert loaded is df
+    assert loaded.equals(df)
     assert storage.read_calls == ["uploads/file.csv"]

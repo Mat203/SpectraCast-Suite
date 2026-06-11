@@ -434,18 +434,24 @@ if not pd.api.types.is_numeric_dtype(df[column]):
 
 series = df[column].astype(float)
 
-def _season_key_from_frequency(index):
-    freq = index.inferred_freq or pd.infer_freq(index)
-    if not freq:
-        return None
-    if freq.startswith("W"):
-        return index.isocalendar().week
-    if freq.startswith("Q"):
-        return index.quarter
-    if freq.startswith("M"):
-        return index.month
-    if freq in {"D", "B"} or (freq.endswith("D") and freq[:-1].isdigit()):
-        return index.dayofweek
+def _resolve_datetime_column(frame):
+    for col in frame.columns:
+        s = frame[col]
+        if pd.api.types.is_datetime64_any_dtype(s):
+            return col
+        if not (pd.api.types.is_object_dtype(s) or pd.api.types.is_string_dtype(s)):
+            continue
+        sample = s.dropna().astype(str)
+        if sample.empty:
+            continue
+        if sample.str.fullmatch(r"\d+").all():
+            continue
+        name_hint = str(col).lower()
+        has_hint = any(token in name_hint for token in ("date", "time", "timestamp", "datetime"))
+        has_separator = sample.str.contains(r"[-/:T ]").any()
+        parsed = pd.to_datetime(sample, errors="coerce")
+        if parsed.notna().mean() >= 0.8 and (has_hint or has_separator):
+            return col
     return None
 
 if strategy == "1":
@@ -457,12 +463,59 @@ elif strategy == "3":
 elif strategy == "4":
     series = series
 elif strategy == "5":
+    original_index = df.index
+    temp_index_set = False
+    if not isinstance(df.index, pd.DatetimeIndex):
+        date_col = _resolve_datetime_column(df)
+        if date_col:
+            try:
+                df.index = pd.DatetimeIndex(pd.to_datetime(df[date_col], errors="coerce"))
+                temp_index_set = True
+            except Exception:
+                pass
     if not isinstance(df.index, pd.DatetimeIndex):
         raise ValueError("Seasonal imputation requires DatetimeIndex")
-    season_key = _season_key_from_frequency(df.index)
+    freq = df.index.inferred_freq or pd.infer_freq(df.index)
+    if not freq:
+        sorted_idx = df.index.sort_values().drop_duplicates()
+        if len(sorted_idx) >= 2:
+            deltas = sorted_idx.to_series().diff().dropna()
+            if not deltas.empty:
+                dominant_delta_days = deltas.mode().iloc[0].days
+                if 28 <= dominant_delta_days <= 31:
+                    freq = "MS"
+                elif 89 <= dominant_delta_days <= 93:
+                    freq = "QS"
+                elif dominant_delta_days == 7:
+                    freq = "W"
+                elif dominant_delta_days == 1:
+                    freq = "D"
+                else:
+                    freq = f"{dominant_delta_days}D"
+    if not freq:
+        if temp_index_set:
+            df.index = original_index
+        raise ValueError("Seasonal imputation requires a regular DatetimeIndex")
+
+    def _season_key_from_frequency_local(idx, f):
+        if f.startswith("W"):
+            return idx.isocalendar().week
+        if f.startswith("Q"):
+            return idx.quarter
+        if f.startswith("M"):
+            return idx.month
+        if f in {"D", "B"} or (f.endswith("D") and f[:-1].isdigit()):
+            return idx.dayofweek
+        return None
+
+    season_key = _season_key_from_frequency_local(df.index, freq)
     if season_key is None:
-        raise ValueError("Seasonal imputation requires a regular daily, weekly, monthly, or quarterly index")
+        if temp_index_set:
+            df.index = original_index
+        raise ValueError("Seasonal imputation requires daily, weekly, monthly, or quarterly index")
     series = series.groupby(season_key).transform(lambda x: x.fillna(x.mean()))
+    if temp_index_set:
+        df.index = original_index
 elif strategy == "6":
     from sklearn.impute import KNNImputer
     numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -503,19 +556,26 @@ before_series = df[column].astype(float)
 
 series = before_series.copy()
 
-def _season_key_from_frequency(index):
-    freq = index.inferred_freq or pd.infer_freq(index)
-    if not freq:
-        return None
-    if freq.startswith("W"):
-        return index.isocalendar().week
-    if freq.startswith("Q"):
-        return index.quarter
-    if freq.startswith("M"):
-        return index.month
-    if freq in {"D", "B"} or (freq.endswith("D") and freq[:-1].isdigit()):
-        return index.dayofweek
+def _resolve_datetime_column(frame):
+    for col in frame.columns:
+        s = frame[col]
+        if pd.api.types.is_datetime64_any_dtype(s):
+            return col
+        if not (pd.api.types.is_object_dtype(s) or pd.api.types.is_string_dtype(s)):
+            continue
+        sample = s.dropna().astype(str)
+        if sample.empty:
+            continue
+        if sample.str.fullmatch(r"\d+").all():
+            continue
+        name_hint = str(col).lower()
+        has_hint = any(token in name_hint for token in ("date", "time", "timestamp", "datetime"))
+        has_separator = sample.str.contains(r"[-/:T ]").any()
+        parsed = pd.to_datetime(sample, errors="coerce")
+        if parsed.notna().mean() >= 0.8 and (has_hint or has_separator):
+            return col
     return None
+
 if strategy == "1":
     series = series.interpolate(method="linear")
 elif strategy == "2":
@@ -525,12 +585,59 @@ elif strategy == "3":
 elif strategy == "4":
     series = series
 elif strategy == "5":
+    original_index = df.index
+    temp_index_set = False
+    if not isinstance(df.index, pd.DatetimeIndex):
+        date_col = _resolve_datetime_column(df)
+        if date_col:
+            try:
+                df.index = pd.DatetimeIndex(pd.to_datetime(df[date_col], errors="coerce"))
+                temp_index_set = True
+            except Exception:
+                pass
     if not isinstance(df.index, pd.DatetimeIndex):
         raise ValueError("Seasonal imputation requires DatetimeIndex")
-    season_key = _season_key_from_frequency(df.index)
+    freq = df.index.inferred_freq or pd.infer_freq(df.index)
+    if not freq:
+        sorted_idx = df.index.sort_values().drop_duplicates()
+        if len(sorted_idx) >= 2:
+            deltas = sorted_idx.to_series().diff().dropna()
+            if not deltas.empty:
+                dominant_delta_days = deltas.mode().iloc[0].days
+                if 28 <= dominant_delta_days <= 31:
+                    freq = "MS"
+                elif 89 <= dominant_delta_days <= 93:
+                    freq = "QS"
+                elif dominant_delta_days == 7:
+                    freq = "W"
+                elif dominant_delta_days == 1:
+                    freq = "D"
+                else:
+                    freq = f"{dominant_delta_days}D"
+    if not freq:
+        if temp_index_set:
+            df.index = original_index
+        raise ValueError("Seasonal imputation requires a regular DatetimeIndex")
+
+    def _season_key_from_frequency_local(idx, f):
+        if f.startswith("W"):
+            return idx.isocalendar().week
+        if f.startswith("Q"):
+            return idx.quarter
+        if f.startswith("M"):
+            return idx.month
+        if f in {"D", "B"} or (f.endswith("D") and f[:-1].isdigit()):
+            return idx.dayofweek
+        return None
+
+    season_key = _season_key_from_frequency_local(df.index, freq)
     if season_key is None:
-        raise ValueError("Seasonal imputation requires a regular daily, weekly, monthly, or quarterly index")
+        if temp_index_set:
+            df.index = original_index
+        raise ValueError("Seasonal imputation requires daily, weekly, monthly, or quarterly index")
     series = series.groupby(season_key).transform(lambda x: x.fillna(x.mean()))
+    if temp_index_set:
+        df.index = original_index
 elif strategy == "6":
     from sklearn.impute import KNNImputer
     numeric_cols = df.select_dtypes(include=[np.number]).columns
