@@ -896,7 +896,7 @@ export const VisualStandardizerView: React.FC = () => {
                   )}
 
                   {!isLoadingRecent && recentDatasets.length > 0 && (
-                    <div className="mt-4 flex-1 max-h-205 space-y-2 overflow-y-auto pr-1">
+                    <div className="mt-4 flex-1 max-h-170 space-y-2 overflow-y-auto pr-1">
                       {recentDatasets.map((dataset) => (
                         <button
                           key={dataset.file_id}

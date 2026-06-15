@@ -342,7 +342,7 @@ export const useAppStore = create<AppStoreState>()(
             throw new Error('Failed to load recent datasets');
           }
           const data = (await response.json()) as { datasets?: any[] };
-          const recent = (data.datasets || []).slice(0, 10);
+          const recent = (data.datasets || []).slice(0, 20);
 
           set((state) => ({
             dataQualityUi: { ...state.dataQualityUi, recentDatasets: recent, isLoadingRecent: false },
