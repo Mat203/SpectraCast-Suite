@@ -24,10 +24,16 @@ interface DataQualityState {
   isMissingPanelVisible: boolean;
 }
 
-interface DataQualityUiState {
+interface SharedUiState {
   isDragging: boolean;
   isLoading: boolean;
   error: string | null;
+  recentDatasets: unknown[];
+  isLoadingRecent: boolean;
+  recentError: string | null;
+}
+
+interface DataQualityUiState extends SharedUiState {
   report: unknown | null;
   toastMessage: string | null;
   isFixingTimestamps: boolean;
@@ -42,9 +48,6 @@ interface DataQualityUiState {
   missingPreviewData: unknown | null;
   isMissingPreviewLoading: boolean;
   missingPreviewError: string | null;
-  recentDatasets: unknown[];
-  isLoadingRecent: boolean;
-  recentError: string | null;
 }
 
 interface LeadingIndicatorsState {
@@ -54,14 +57,8 @@ interface LeadingIndicatorsState {
   extraContext: string;
 }
 
-interface LeadingIndicatorsUiState {
-  isDragging: boolean;
-  isLoading: boolean;
-  error: string | null;
+interface LeadingIndicatorsUiState extends SharedUiState {
   result: unknown | null;
-  recentDatasets: unknown[];
-  isLoadingRecent: boolean;
-  recentError: string | null;
 }
 
 type LeadingIndicatorsToastMode = 'progress' | 'done' | 'error';
@@ -99,24 +96,11 @@ interface VisualStandardizerState {
   y2Label: string;
 }
 
-interface VisualStandardizerUiState {
-  isDragging: boolean;
-  isLoading: boolean;
-  error: string | null;
+interface VisualStandardizerUiState extends SharedUiState {
   styles: string[];
   plotResult: unknown | null;
-  recentDatasets: unknown[];
-  isLoadingRecent: boolean;
-  recentError: string | null;
   cleanedCode: string;
   chartCode: string;
-}
-
-interface VisualStandardizerSessionState {
-  file: File | null;
-  fileId: string | null;
-  originalFilename: string | null;
-  columns: string[];
 }
 
 export interface AppStoreState {
@@ -128,7 +112,6 @@ export interface AppStoreState {
   leadingIndicatorsStream: LeadingIndicatorsStreamState;
   visualStandardizer: VisualStandardizerState;
   visualStandardizerUi: VisualStandardizerUiState;
-  visualStandardizerSession: VisualStandardizerSessionState;
   setActiveDataset: (updates: Partial<ActiveDatasetState>) => void;
   setDatasetColumns: (columns: string[]) => void;
   resetActiveDataset: () => void;
@@ -144,7 +127,6 @@ export interface AppStoreState {
   dismissLeadingIndicatorsToast: () => void;
   setVisualStandardizer: (updates: Partial<VisualStandardizerState>) => void;
   setVisualStandardizerUi: (updates: Partial<VisualStandardizerUiState>) => void;
-  setVisualStandardizerSession: (updates: Partial<VisualStandardizerSessionState>) => void;
   resetAppState: () => void;
   loadRecentDatasets: () => Promise<void>;
 }
@@ -240,12 +222,6 @@ const initialState = {
     recentError: null,
     cleanedCode: '',
     chartCode: '',
-  },
-  visualStandardizerSession: {
-    file: null,
-    fileId: null,
-    originalFilename: null,
-    columns: [] as string[],
   },
 } as const;
 
@@ -349,13 +325,6 @@ export const useAppStore = create<AppStoreState>()(
             ...updates,
           },
         })),
-      setVisualStandardizerSession: (updates) =>
-        set((state) => ({
-          visualStandardizerSession: {
-            ...state.visualStandardizerSession,
-            ...updates,
-          },
-        })),
       resetAppState: () =>
         set({
           ...initialState,
@@ -369,10 +338,6 @@ export const useAppStore = create<AppStoreState>()(
 
         try {
           const response = await apiFetch('/api/users/me');
-          try {
-            const fs = await import('fs');
-            fs.writeFileSync('response_log.txt', `response ok: ${response?.ok}, status: ${response?.status}, type of response: ${typeof response}, keys: ${response ? Object.keys(response).join(', ') : 'none'}`);
-          } catch (e) {}
           if (!response.ok) {
             throw new Error('Failed to load recent datasets');
           }
@@ -385,11 +350,6 @@ export const useAppStore = create<AppStoreState>()(
             visualStandardizerUi: { ...state.visualStandardizerUi, recentDatasets: recent, isLoadingRecent: false },
           }));
         } catch (err) {
-          const errMsg = err instanceof Error ? err.message + '\n' + err.stack : String(err);
-          try {
-            const fs = await import('fs');
-            fs.writeFileSync('error_log.txt', errMsg);
-          } catch (e) {}
           const errMsgSimple = err instanceof Error ? err.message : 'Failed to load recent datasets';
           set((state) => ({
             dataQualityUi: { ...state.dataQualityUi, recentError: errMsgSimple, isLoadingRecent: false },

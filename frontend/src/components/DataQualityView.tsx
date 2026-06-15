@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import posthog from 'posthog-js';
 import { apiFetch, downloadFile } from '../lib/api';
 import { STRATEGY_DESCRIPTIONS } from '../lib/outlierStrategies';
@@ -183,13 +183,8 @@ export const DataQualityView: React.FC = () => {
   const setMissingPreviewData = (value: MissingPreviewResponse | null) => setDataQualityUi({ missingPreviewData: value });
   const setIsMissingPreviewLoading = (value: boolean) => setDataQualityUi({ isMissingPreviewLoading: value });
   const setMissingPreviewError = (value: string | null) => setDataQualityUi({ missingPreviewError: value });
-  const setRecentDatasets = (value: RecentDataset[]) => setDataQualityUi({ recentDatasets: value });
-  const setIsLoadingRecent = (value: boolean) => setDataQualityUi({ isLoadingRecent: value });
-  const setRecentError = (value: string | null) => setDataQualityUi({ recentError: value });
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const uploadPanelRef = useRef<HTMLDivElement>(null);
-  const [previewMaxHeight, setPreviewMaxHeight] = useState<number | null>(null);
+
   const outlierModalRef = useRef<HTMLDivElement>(null);
   const missingModalRef = useRef<HTMLDivElement>(null);
 
@@ -231,26 +226,6 @@ export const DataQualityView: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMissingModalOpen]);
 
-  useEffect(() => {
-    const element = uploadPanelRef.current;
-    if (!element) return;
-
-    const updateHeight = () => {
-      const nextHeight = element.getBoundingClientRect().height * 4;
-      setPreviewMaxHeight(nextHeight);
-    };
-
-    updateHeight();
-
-    const observer = new ResizeObserver(updateHeight);
-    observer.observe(element);
-    window.addEventListener('resize', updateHeight);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', updateHeight);
-    };
-  }, []);
 
   const previewColumns = useMemo(() => {
     if (!report?.dataset_preview?.length) {
@@ -1348,7 +1323,6 @@ export const DataQualityView: React.FC = () => {
 
               <div
                 className="w-full max-w-full overflow-x-auto overflow-y-auto flex-1 min-h-0 rounded-xl border border-slate-200 scs-scrollbar"
-                style={previewMaxHeight ? { maxHeight: previewMaxHeight } : undefined}
               >
                 <table className="min-w-full w-max border-collapse text-sm">
                   <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm text-slate-700">

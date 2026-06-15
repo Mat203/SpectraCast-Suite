@@ -2,6 +2,7 @@ import sys
 import os
 import logging
 import re
+from contextlib import asynccontextmanager
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
@@ -35,7 +36,15 @@ def configure_logging() -> None:
 
 
 configure_logging()
-app = FastAPI(title="SpectraCast Suite API")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
+
+app = FastAPI(title="SpectraCast Suite API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -62,11 +71,6 @@ app.include_router(vs.router, prefix="/api/vs", tags=["Visual Standardizer"])
 app.include_router(li.router, prefix="/api/li", tags=["Leading Indicators"])
 app.include_router(li.stream_router, prefix="/api", tags=["Leading Indicators"])
 app.include_router(llm.router, prefix="/api/llm", tags=["LLM"])
-
-
-@app.on_event("startup")
-def on_startup():
-    Base.metadata.create_all(bind=engine)
 
 @app.get("/")
 def root():

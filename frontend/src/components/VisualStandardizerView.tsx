@@ -35,8 +35,6 @@ export const VisualStandardizerView: React.FC = () => {
   const setVisualStandardizer = useAppStore((state: AppStoreState) => state.setVisualStandardizer) as AppStoreState['setVisualStandardizer'];
   const visualStandardizerUi = useAppStore((state: AppStoreState) => state.visualStandardizerUi) as AppStoreState['visualStandardizerUi'];
   const setVisualStandardizerUi = useAppStore((state: AppStoreState) => state.setVisualStandardizerUi) as AppStoreState['setVisualStandardizerUi'];
-  const visualStandardizerSession = useAppStore((state: AppStoreState) => state.visualStandardizerSession) as AppStoreState['visualStandardizerSession'];
-  const setVisualStandardizerSession = useAppStore((state: AppStoreState) => state.setVisualStandardizerSession) as AppStoreState['setVisualStandardizerSession'];
 
   const { isLocalMode, setIsLocalMode } = useComputeMode() as {
     isLocalMode: boolean;
@@ -184,9 +182,7 @@ export const VisualStandardizerView: React.FC = () => {
   const setError = (value: string | null) => setVisualStandardizerUi({ error: value });
   const setStyles = (value: string[]) => setVisualStandardizerUi({ styles: value });
   const setPlotResult = (value: GeneratePlotResponse | null) => setVisualStandardizerUi({ plotResult: value });
-  const setRecentDatasets = (value: RecentDataset[]) => setVisualStandardizerUi({ recentDatasets: value });
-  const setIsLoadingRecent = (value: boolean) => setVisualStandardizerUi({ isLoadingRecent: value });
-  const setRecentError = (value: string | null) => setVisualStandardizerUi({ recentError: value });
+
   const setCleanedCode = (value: string) => setVisualStandardizerUi({ cleanedCode: value });
   const setChartCode = (value: string) => setVisualStandardizerUi({ chartCode: value });
 
@@ -345,12 +341,6 @@ export const VisualStandardizerView: React.FC = () => {
         originalFilename: selectedFile.name,
         columns: [],
       });
-      setVisualStandardizerSession({
-        file: selectedFile,
-        fileId: null,
-        originalFilename: selectedFile.name,
-        columns: [],
-      });
       parseColumnsFromFile(selectedFile);
       localCsvRef.current = null;
       setLocalPlotBase64(null);
@@ -375,7 +365,6 @@ export const VisualStandardizerView: React.FC = () => {
         .filter(Boolean);
 
       setDatasetColumns(parsedHeaders);
-      setVisualStandardizerSession({ columns: parsedHeaders });
       if (parsedHeaders.length >= 2) {
         setXAxis(parsedHeaders[0]);
         setYAxes([{ column: parsedHeaders[1], axis: 'primary' }]);
@@ -391,7 +380,6 @@ export const VisualStandardizerView: React.FC = () => {
     reader.onerror = () => {
       setError('Could not read CSV headers. Try another file.');
       setDatasetColumns([]);
-      setVisualStandardizerSession({ columns: [] });
       setXAxis('');
       setYAxes([]);
     };
@@ -399,36 +387,6 @@ export const VisualStandardizerView: React.FC = () => {
     reader.readAsText(nextFile.slice(0, 1024));
   };
 
-  useEffect(() => {
-    if (!visualStandardizerSession.file) {
-      return;
-    }
-
-    if (file === visualStandardizerSession.file) {
-      return;
-    }
-
-    setActiveDataset({
-      file: visualStandardizerSession.file,
-      fileId: visualStandardizerSession.fileId,
-      originalFilename: visualStandardizerSession.originalFilename,
-      columns: visualStandardizerSession.columns,
-    });
-
-    if (visualStandardizerSession.columns.length > 0) {
-      setDatasetColumns(visualStandardizerSession.columns);
-    } else {
-      parseColumnsFromFile(visualStandardizerSession.file);
-    }
-  }, [
-    file,
-    visualStandardizerSession.file,
-    visualStandardizerSession.fileId,
-    visualStandardizerSession.originalFilename,
-    visualStandardizerSession.columns,
-    setActiveDataset,
-    setDatasetColumns,
-  ]);
 
 
 
@@ -455,12 +413,6 @@ export const VisualStandardizerView: React.FC = () => {
 
       setActiveTab('plot_generator');
       setActiveDataset({
-        file: restoredFile,
-        fileId: dataset.file_id,
-        originalFilename: dataset.original_filename || restoredFile.name,
-        columns: [],
-      });
-      setVisualStandardizerSession({
         file: restoredFile,
         fileId: dataset.file_id,
         originalFilename: dataset.original_filename || restoredFile.name,
@@ -550,10 +502,6 @@ export const VisualStandardizerView: React.FC = () => {
         const uploadData = await uploadRes.json();
         fileIdToUse = uploadData.file_id;
         setActiveDataset({
-          fileId: fileIdToUse,
-          originalFilename: file?.name || null,
-        });
-        setVisualStandardizerSession({
           fileId: fileIdToUse,
           originalFilename: file?.name || null,
         });
@@ -948,7 +896,7 @@ export const VisualStandardizerView: React.FC = () => {
                   )}
 
                   {!isLoadingRecent && recentDatasets.length > 0 && (
-                    <div className="mt-4 flex-1 max-h-165 space-y-2 overflow-y-auto pr-1">
+                    <div className="mt-4 flex-1 max-h-205 space-y-2 overflow-y-auto pr-1">
                       {recentDatasets.map((dataset) => (
                         <button
                           key={dataset.file_id}

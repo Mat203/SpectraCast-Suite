@@ -78,23 +78,19 @@ def scan_data(
 ):
     try:
         require_dataset_owner(db, current_user.id, request.file_id)
-        print(f"[SCAN] Starting scan for file_id: {request.file_id}")
         loader = DataLoader(data_folder_name="uploads", storage=storage)
         
         file_path = f"{request.file_id}_raw.csv"
-        print(f"[SCAN] Loading CSV: {file_path}")
         df = loader.load_csv(file_path)
 
         if df is None:
             raise HTTPException(status_code=404, detail="File not found or empty")
 
-        print(f"[SCAN] DataFrame loaded: {df.shape[0]} rows, {df.shape[1]} columns")
         has_previous_state = storage.exists(get_previous_dataset_key(request.file_id, storage))
         dataset = db.query(Dataset).filter(Dataset.file_uuid == request.file_id).first()
         is_modified = dataset.is_modified if dataset else False
         clean_report = build_scan_report(df, has_previous_state, is_modified)
         
-        print(f"[SCAN] Scan completed successfully")
         return clean_report
     except HTTPException:
         raise

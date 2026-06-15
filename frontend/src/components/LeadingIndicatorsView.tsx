@@ -77,11 +77,8 @@ export const LeadingIndicatorsView: React.FC = () => {
   const setIsLoading = (value: boolean) => setLeadingIndicatorsUi({ isLoading: value });
   const setError = (value: string | null) => setLeadingIndicatorsUi({ error: value });
   const setResult = (value: LeadingIndicatorsResponse | null) => setLeadingIndicatorsUi({ result: value });
-  const setRecentDatasets = (value: RecentDataset[]) => setLeadingIndicatorsUi({ recentDatasets: value });
-  const setIsLoadingRecent = (value: boolean) => setLeadingIndicatorsUi({ isLoadingRecent: value });
-  const setRecentError = (value: string | null) => setLeadingIndicatorsUi({ recentError: value });
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
 
   const ensureLocalCsv = async () => {
     if (localCsvRef.current) {

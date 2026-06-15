@@ -94,5 +94,5 @@ def set_onboarded(
     return OnboardResponse(
         status="success",
         message="Onboarding completed",
-        is_onboarded=False,
+        is_onboarded=True,
     )

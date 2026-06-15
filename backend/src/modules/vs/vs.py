@@ -71,8 +71,12 @@ class PlotEngine:
                     ax2.bar(indices + offset, df[y_col], width=bar_width, label=f"{y_col} (secondary)", alpha=0.8, color=color)
                     offset += bar_width
 
-            ax.set_xticks(indices)
             labels = [d.strftime('%Y-%m') if hasattr(d, 'strftime') else str(d) for d in x_data]
+            
+            step = (len(indices) // 12) + 1
+            ax.set_xticks(indices[::step])
+            ax.set_xticklabels([labels[i] for i in range(0, len(labels), step)])
+
         else:
             for i, y_col in enumerate(primary_cols):
                 color = primary_colors[i % len(primary_colors)]
@@ -88,7 +92,6 @@ class PlotEngine:
                         ax2.scatter(x_data, df[y_col], label=f"{y_col} (secondary)", color=color)
                     else:
                         ax2.plot(x_data, df[y_col], label=f"{y_col} (secondary)", color=color)
-
 
         title_cols = ", ".join(all_cols) if all_cols else "y"
         ax.set_title(title if title else f"{title_cols} vs {x_col or 'Date'}", pad=15)
@@ -107,13 +110,17 @@ class PlotEngine:
         if ax2:
             y1_min, y1_max = ax.get_ylim()
             y2_min, y2_max = ax2.get_ylim()
+            
             if (y1_min < 0 < y1_max) or (y2_min < 0 < y2_max):
                 max_abs1 = max(abs(y1_min), abs(y1_max))
                 ax.set_ylim(-max_abs1, max_abs1)
+                
                 max_abs2 = max(abs(y2_min), abs(y2_max))
                 ax2.set_ylim(-max_abs2, max_abs2)
 
-        ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=15))
+        if chart_type != '2':
+            ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=15))
+            
         fig.autofmt_xdate(rotation=45, ha='right')
         
         output_path = self.output_dir / filename
@@ -121,4 +128,5 @@ class PlotEngine:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output_path)
         plt.close(fig)
+        
         return output_path

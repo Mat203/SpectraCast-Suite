@@ -283,33 +283,3 @@ class DataScanner:
                     report["missing_value_strategy_recommendations"][col] = missing_rec
 
         return report
-
-    def print_report(self, report: Dict[str, Any]):
-        print("\n" + "="*40)
-        print(" DATA HEALTH CARD")
-        print("="*40)
-        print(f"Rows:      {report['rows']}")
-        print(f"Frequency: {report['display_frequency']}")
-        
-        if report["missing_dates_count"] > 0:
-            print(f"Missing Dates (Gaps): {report['missing_dates_count']}")
-            print(f"  Example gaps:       {', '.join(report['missing_dates'])}...")
-        else:
-            print("Missing Dates:        0")
-
-        print("\nMissing Values (NaNs):")
-        for col, count in report['missing_values'].items():
-            if count > 0:
-                print(f"  - {col}: {count} missing")
-
-        if report["outliers"]:
-            print("\nExtreme Outliers (Z-score > 3):")
-            for col, count in report["outliers"].items():
-                print(f"  - {col}: {count} outliers")
-        else:
-            print("\nNo extreme outliers detected.")
-
-        if report.get("outlier_strategy_recommendations"):
-            print("\nOutlier Strategy Recommendations (Skew-based):")
-            for col, rec in report["outlier_strategy_recommendations"].items():
-                print(f"  - {col}: {rec['strategy']} (skew={rec['skew']:.2f})")
