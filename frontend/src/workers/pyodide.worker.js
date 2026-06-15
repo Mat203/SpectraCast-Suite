@@ -70,10 +70,19 @@ self.onmessage = async (event) => {
     const bootstrap = `
 import io
 import pandas as pd
+import numpy as np
 
 csv_text = globals().get("csv_data")
 if csv_text:
     df = pd.read_csv(io.StringIO(csv_text))
+    df = df.replace(r'(?i)^\\s*(nan|none|null|na)?\\s*$', np.nan, regex=True)
+    for col in df.columns:
+        if df[col].dtype == 'object' or pd.api.types.is_string_dtype(df[col]):
+            try:
+                cleaned_series = df[col].replace(r'[%]', '', regex=True)
+                df[col] = pd.to_numeric(cleaned_series)
+            except (ValueError, TypeError):
+                pass
 else:
     df = None
 `;

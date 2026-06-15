@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import posthog from 'posthog-js';
 import { apiFetch, downloadFile } from '../lib/api';
 import { STRATEGY_DESCRIPTIONS } from '../lib/outlierStrategies';
 import type { OutlierStrategyKey } from '../lib/outlierStrategies';
@@ -16,6 +17,7 @@ import {
   LOCAL_DQ_PREVIEW_OUTLIERS_CODE,
   LOCAL_DQ_SCAN_CODE,
 } from '../lib/localComputeScripts';
+import { FileUpload } from './FileUpload';
 
 interface UploadResponse {
   status: string;
@@ -134,6 +136,7 @@ export const DataQualityView: React.FC = () => {
   const setMissingStrategy = (value: MissingStrategyKey) => setDataQuality({ missingStrategy: value });
   const setMissingStrategyPreview = (value: MissingStrategyKey) => setDataQuality({ missingStrategyPreview: value });
   const setIsMissingPanelVisible = (value: boolean) => setDataQuality({ isMissingPanelVisible: value });
+  const loadRecentDatasets = useAppStore((state: AppStoreState) => state.loadRecentDatasets);
 
   const {
     isDragging,
@@ -180,13 +183,8 @@ export const DataQualityView: React.FC = () => {
   const setMissingPreviewData = (value: MissingPreviewResponse | null) => setDataQualityUi({ missingPreviewData: value });
   const setIsMissingPreviewLoading = (value: boolean) => setDataQualityUi({ isMissingPreviewLoading: value });
   const setMissingPreviewError = (value: string | null) => setDataQualityUi({ missingPreviewError: value });
-  const setRecentDatasets = (value: RecentDataset[]) => setDataQualityUi({ recentDatasets: value });
-  const setIsLoadingRecent = (value: boolean) => setDataQualityUi({ isLoadingRecent: value });
-  const setRecentError = (value: string | null) => setDataQualityUi({ recentError: value });
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const uploadPanelRef = useRef<HTMLDivElement>(null);
-  const [previewMaxHeight, setPreviewMaxHeight] = useState<number | null>(null);
+
   const outlierModalRef = useRef<HTMLDivElement>(null);
   const missingModalRef = useRef<HTMLDivElement>(null);
 
@@ -197,26 +195,8 @@ export const DataQualityView: React.FC = () => {
   }, [toastMessage]);
 
   useEffect(() => {
-    const fetchRecentDatasets = async () => {
-      setIsLoadingRecent(true);
-      setRecentError(null);
-      try {
-        const response = await apiFetch('/api/users/me');
-        if (!response.ok) {
-          throw new Error('Failed to fetch recent datasets');
-        }
-        const data = (await response.json()) as { datasets?: RecentDataset[] };
-        const recent = (data.datasets || []).slice(0, 10);
-        setRecentDatasets(recent);
-      } catch (err) {
-        setRecentError(err instanceof Error ? err.message : 'Failed to load recent datasets');
-      } finally {
-        setIsLoadingRecent(false);
-      }
-    };
-
-    fetchRecentDatasets();
-  }, []);
+    loadRecentDatasets();
+  }, [loadRecentDatasets]);
 
   useEffect(() => {
     if (!isOutlierModalOpen || !outlierModalRef.current) return;
@@ -246,26 +226,6 @@ export const DataQualityView: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMissingModalOpen]);
 
-  useEffect(() => {
-    const element = uploadPanelRef.current;
-    if (!element) return;
-
-    const updateHeight = () => {
-      const nextHeight = element.getBoundingClientRect().height * 4;
-      setPreviewMaxHeight(nextHeight);
-    };
-
-    updateHeight();
-
-    const observer = new ResizeObserver(updateHeight);
-    observer.observe(element);
-    window.addEventListener('resize', updateHeight);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', updateHeight);
-    };
-  }, []);
 
   const previewColumns = useMemo(() => {
     if (!report?.dataset_preview?.length) {
@@ -455,27 +415,6 @@ export const DataQualityView: React.FC = () => {
     localPreviousCsvRef.current = null;
   };
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-
-    const droppedFile = e.dataTransfer.files?.[0] ?? null;
-    handleFileSelect(droppedFile);
-  };
-
-  const handleBrowseClick = () => {
-    fileInputRef.current?.click();
-  };
 
   const handleScan = async (useExistingFile: boolean = false) => {
     if (!file && !useExistingFile) {
@@ -638,6 +577,12 @@ export const DataQualityView: React.FC = () => {
         throw new Error(errorData.detail || 'Failed to handle outliers');
       }
 
+      posthog.capture('dq_strategy_applied', {
+        module_type: 'outliers',
+        chosen_strategy: outlierStrategy,
+        recommended_strategy: report?.outlier_strategy_recommendations?.[selectedOutlierCol]?.strategy || null,
+        dataset_size_rows: report?.rows || 0
+      });
       setIsOutlierModalOpen(false);
       await handleScan(true);
 
@@ -767,6 +712,12 @@ export const DataQualityView: React.FC = () => {
         throw new Error(errorData.detail || 'Failed to handle missing values');
       }
 
+      posthog.capture('dq_strategy_applied', {
+        module_type: 'imputation',
+        chosen_strategy: missingStrategy,
+        recommended_strategy: report?.missing_value_strategy_recommendations?.[selectedMissingCol]?.strategy || null,
+        dataset_size_rows: report?.rows || 0
+      });
       setIsMissingModalOpen(false);
       await handleScan(true);
 
@@ -1086,41 +1037,13 @@ export const DataQualityView: React.FC = () => {
         <section className={`rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-300 ${report ? 'mb-6 p-5' : 'p-8 md:p-10'}`}>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
             <div>
-              <div
-                ref={uploadPanelRef}
-                className={`w-full rounded-xl border-2 border-dashed p-8 md:p-12 text-center transition-colors ${isDragging ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400 bg-white'}`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={handleBrowseClick}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleBrowseClick();
-                  }
-                }}
-              >
-                <svg className="mx-auto mb-4 h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-
-                <p className="text-lg font-semibold text-slate-800">
-                  {file ? file.name : 'Click or drag a CSV file here'}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {file ? `${(file.size / 1024).toFixed(1)} KB selected` : 'Only .csv files are accepted'}
-                </p>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  accept=".csv"
-                  onChange={(e) => handleFileSelect(e.target.files?.[0] ?? null)}
-                />
-              </div>
+              <FileUpload
+                file={file}
+                isDragging={isDragging}
+                onFileSelect={handleFileSelect}
+                setIsDragging={setIsDragging}
+                accentColor="sky"
+              />
 
               <div className="mt-5 flex flex-wrap items-center gap-4">
                 <button
@@ -1400,7 +1323,6 @@ export const DataQualityView: React.FC = () => {
 
               <div
                 className="w-full max-w-full overflow-x-auto overflow-y-auto flex-1 min-h-0 rounded-xl border border-slate-200 scs-scrollbar"
-                style={previewMaxHeight ? { maxHeight: previewMaxHeight } : undefined}
               >
                 <table className="min-w-full w-max border-collapse text-sm">
                   <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm text-slate-700">

@@ -80,6 +80,20 @@ export const HelpPrivacyModal: React.FC<HelpPrivacyModalProps> = ({ isOpen, onCl
                 </div>
               </div>
             </div>
+
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-3">Frequently Asked Questions (FAQ)</h3>
+              <div className="space-y-3 text-slate-700 text-sm">
+                <div>
+                  <p className="font-semibold text-slate-900 mb-1">What statistics does the app collect?</p>
+                  <p>When running in remote mode, we collect anonymous statistics on the data quality strategies applied (e.g., the chosen outlier or imputation strategy, the system's recommended strategy, and the overall dataset size in rows). This helps us improve our recommendation algorithms.</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900 mb-1">How can I opt out of analytics tracking?</p>
+                  <p>Telemetry tracking is automatically disabled if you activate "Local Mode" or run the application locally. No tracking events will be sent under these conditions.</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

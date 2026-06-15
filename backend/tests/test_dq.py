@@ -236,3 +236,18 @@ def test_handle_outliers_drop_all_rows():
     cleaner.handle_outliers("price", "drop", outlier_mask)
 
     assert len(cleaner.df) == 0
+
+
+def test_impute_seasonal_with_date_column_resolves_index():
+    dates = pd.date_range("2023-01-01", periods=24, freq="MS")
+    pattern = list(range(12)) * 2
+    values = pd.Series(pattern).astype(float)
+    values.iloc[5] = np.nan
+    df = pd.DataFrame({"date": dates, "price": values.values})
+
+    cleaner = DataCleaner(df)
+    cleaner.impute_column("price", "5")
+
+    assert not pd.isna(cleaner.df["price"].iloc[5])
+    assert cleaner.df["price"].iloc[5] == pytest.approx(5.0)
+    assert not isinstance(cleaner.df.index, pd.DatetimeIndex)

@@ -20,7 +20,7 @@ from backend.src.api.models.dq import (
 )
 from backend.src.api.db import get_db
 from backend.src.api.db_models import User, Dataset
-from backend.src.api.deps import get_current_user
+from backend.src.api.deps import get_current_user, get_storage
 from backend.src.api.services.datasets import require_dataset_owner
 from backend.src.api.services.storage import StorageService
 from backend.src.core.loader import DataLoader
@@ -35,36 +35,35 @@ import os
 import pandas as pd
 
 router = APIRouter()
-storage = StorageService()
 
 
-def get_dataset_key(file_id: str) -> str:
+def get_dataset_key(file_id: str, storage: StorageService) -> str:
     return storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
 
 
-def get_previous_dataset_key(file_id: str) -> str:
+def get_previous_dataset_key(file_id: str, storage: StorageService) -> str:
     return storage.build_key(file_id, suffix="previous", ext="csv", prefix="uploads")
 
 
-def cache_previous_dataset(file_id: str) -> None:
-    dataset_key = get_dataset_key(file_id)
+def cache_previous_dataset(file_id: str, storage: StorageService) -> None:
+    dataset_key = get_dataset_key(file_id, storage)
     if not storage.exists(dataset_key):
         raise HTTPException(status_code=404, detail="File not found or empty")
 
     storage.put_bytes(
-        get_previous_dataset_key(file_id),
+        get_previous_dataset_key(file_id, storage),
         storage.read_bytes(dataset_key),
         content_type="text/csv",
     )
 
 
-def restore_previous_dataset(file_id: str) -> None:
-    previous_key = get_previous_dataset_key(file_id)
+def restore_previous_dataset(file_id: str, storage: StorageService) -> None:
+    previous_key = get_previous_dataset_key(file_id, storage)
     if not storage.exists(previous_key):
         raise HTTPException(status_code=400, detail="No previous state available to undo")
 
     storage.put_bytes(
-        get_dataset_key(file_id),
+        get_dataset_key(file_id, storage),
         storage.read_bytes(previous_key),
         content_type="text/csv",
     )
@@ -75,26 +74,23 @@ def scan_data(
     request: ScanRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     try:
         require_dataset_owner(db, current_user.id, request.file_id)
-        print(f"[SCAN] Starting scan for file_id: {request.file_id}")
         loader = DataLoader(data_folder_name="uploads", storage=storage)
         
         file_path = f"{request.file_id}_raw.csv"
-        print(f"[SCAN] Loading CSV: {file_path}")
         df = loader.load_csv(file_path)
 
         if df is None:
             raise HTTPException(status_code=404, detail="File not found or empty")
 
-        print(f"[SCAN] DataFrame loaded: {df.shape[0]} rows, {df.shape[1]} columns")
-        has_previous_state = storage.exists(get_previous_dataset_key(request.file_id))
+        has_previous_state = storage.exists(get_previous_dataset_key(request.file_id, storage))
         dataset = db.query(Dataset).filter(Dataset.file_uuid == request.file_id).first()
         is_modified = dataset.is_modified if dataset else False
         clean_report = build_scan_report(df, has_previous_state, is_modified)
         
-        print(f"[SCAN] Scan completed successfully")
         return clean_report
     except HTTPException:
         raise
@@ -109,6 +105,7 @@ def clean_data(
     request: CleanRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
     loader = DataLoader(data_folder_name="uploads", storage=storage)
@@ -151,6 +148,7 @@ def handle_outliers(
     request: OutlierActionRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
     loader = DataLoader(data_folder_name="uploads", storage=storage)
@@ -160,7 +158,7 @@ def handle_outliers(
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty")
 
-    cache_previous_dataset(request.file_id)
+    cache_previous_dataset(request.file_id, storage)
 
     try:
         df = apply_outlier_strategy(df, request.column, request.strategy)
@@ -182,6 +180,7 @@ def preview_outliers(
     request: OutlierPreviewRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
     loader = DataLoader(data_folder_name="uploads", storage=storage)
@@ -203,6 +202,7 @@ def handle_missing(
     request: MissingValueActionRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
     loader = DataLoader(data_folder_name="uploads", storage=storage)
@@ -212,7 +212,7 @@ def handle_missing(
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty")
 
-    cache_previous_dataset(request.file_id)
+    cache_previous_dataset(request.file_id, storage)
 
     try:
         updated_df = apply_missing_strategy(df, request.column, request.strategy)
@@ -234,6 +234,7 @@ def fix_timestamps(
     request: FixTimestampsRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
     loader = DataLoader(data_folder_name="uploads", storage=storage)
@@ -243,7 +244,7 @@ def fix_timestamps(
     if df is None:
         raise HTTPException(status_code=404, detail="File not found or empty")
 
-    cache_previous_dataset(request.file_id)
+    cache_previous_dataset(request.file_id, storage)
 
     try:
         updated_df, inserted_rows, preview_records = fix_time_axis(df)
@@ -264,9 +265,10 @@ def undo_last_change(
     request: UndoRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
-    restore_previous_dataset(request.file_id)
+    restore_previous_dataset(request.file_id, storage)
 
     return UndoResponse(
         status="success",
@@ -279,6 +281,7 @@ def save_modified_dataset(
     request: SaveModifiedRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
     
@@ -289,7 +292,7 @@ def save_modified_dataset(
     dataset.is_modified = True
     db.commit()
     
-    previous_key = get_previous_dataset_key(request.file_id)
+    previous_key = get_previous_dataset_key(request.file_id, storage)
     if storage.exists(previous_key):
         storage.delete(previous_key)
     
@@ -304,6 +307,7 @@ def preview_missing(
     request: MissingPreviewRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
     loader = DataLoader(data_folder_name="uploads", storage=storage)
@@ -325,6 +329,7 @@ def download_dataset(
     file_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, file_id)
     key = storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")

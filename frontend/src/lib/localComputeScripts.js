@@ -434,18 +434,24 @@ if not pd.api.types.is_numeric_dtype(df[column]):
 
 series = df[column].astype(float)
 
-def _season_key_from_frequency(index):
-    freq = index.inferred_freq or pd.infer_freq(index)
-    if not freq:
-        return None
-    if freq.startswith("W"):
-        return index.isocalendar().week
-    if freq.startswith("Q"):
-        return index.quarter
-    if freq.startswith("M"):
-        return index.month
-    if freq in {"D", "B"} or (freq.endswith("D") and freq[:-1].isdigit()):
-        return index.dayofweek
+def _resolve_datetime_column(frame):
+    for col in frame.columns:
+        s = frame[col]
+        if pd.api.types.is_datetime64_any_dtype(s):
+            return col
+        if not (pd.api.types.is_object_dtype(s) or pd.api.types.is_string_dtype(s)):
+            continue
+        sample = s.dropna().astype(str)
+        if sample.empty:
+            continue
+        if sample.str.fullmatch(r"\d+").all():
+            continue
+        name_hint = str(col).lower()
+        has_hint = any(token in name_hint for token in ("date", "time", "timestamp", "datetime"))
+        has_separator = sample.str.contains(r"[-/:T ]").any()
+        parsed = pd.to_datetime(sample, errors="coerce")
+        if parsed.notna().mean() >= 0.8 and (has_hint or has_separator):
+            return col
     return None
 
 if strategy == "1":
@@ -457,12 +463,59 @@ elif strategy == "3":
 elif strategy == "4":
     series = series
 elif strategy == "5":
+    original_index = df.index
+    temp_index_set = False
+    if not isinstance(df.index, pd.DatetimeIndex):
+        date_col = _resolve_datetime_column(df)
+        if date_col:
+            try:
+                df.index = pd.DatetimeIndex(pd.to_datetime(df[date_col], errors="coerce"))
+                temp_index_set = True
+            except Exception:
+                pass
     if not isinstance(df.index, pd.DatetimeIndex):
         raise ValueError("Seasonal imputation requires DatetimeIndex")
-    season_key = _season_key_from_frequency(df.index)
+    freq = df.index.inferred_freq or pd.infer_freq(df.index)
+    if not freq:
+        sorted_idx = df.index.sort_values().drop_duplicates()
+        if len(sorted_idx) >= 2:
+            deltas = sorted_idx.to_series().diff().dropna()
+            if not deltas.empty:
+                dominant_delta_days = deltas.mode().iloc[0].days
+                if 28 <= dominant_delta_days <= 31:
+                    freq = "MS"
+                elif 89 <= dominant_delta_days <= 93:
+                    freq = "QS"
+                elif dominant_delta_days == 7:
+                    freq = "W"
+                elif dominant_delta_days == 1:
+                    freq = "D"
+                else:
+                    freq = f"{dominant_delta_days}D"
+    if not freq:
+        if temp_index_set:
+            df.index = original_index
+        raise ValueError("Seasonal imputation requires a regular DatetimeIndex")
+
+    def _season_key_from_frequency_local(idx, f):
+        if f.startswith("W"):
+            return idx.isocalendar().week
+        if f.startswith("Q"):
+            return idx.quarter
+        if f.startswith("M"):
+            return idx.month
+        if f in {"D", "B"} or (f.endswith("D") and f[:-1].isdigit()):
+            return idx.dayofweek
+        return None
+
+    season_key = _season_key_from_frequency_local(df.index, freq)
     if season_key is None:
-        raise ValueError("Seasonal imputation requires a regular daily, weekly, monthly, or quarterly index")
+        if temp_index_set:
+            df.index = original_index
+        raise ValueError("Seasonal imputation requires daily, weekly, monthly, or quarterly index")
     series = series.groupby(season_key).transform(lambda x: x.fillna(x.mean()))
+    if temp_index_set:
+        df.index = original_index
 elif strategy == "6":
     from sklearn.impute import KNNImputer
     numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -503,19 +556,26 @@ before_series = df[column].astype(float)
 
 series = before_series.copy()
 
-def _season_key_from_frequency(index):
-    freq = index.inferred_freq or pd.infer_freq(index)
-    if not freq:
-        return None
-    if freq.startswith("W"):
-        return index.isocalendar().week
-    if freq.startswith("Q"):
-        return index.quarter
-    if freq.startswith("M"):
-        return index.month
-    if freq in {"D", "B"} or (freq.endswith("D") and freq[:-1].isdigit()):
-        return index.dayofweek
+def _resolve_datetime_column(frame):
+    for col in frame.columns:
+        s = frame[col]
+        if pd.api.types.is_datetime64_any_dtype(s):
+            return col
+        if not (pd.api.types.is_object_dtype(s) or pd.api.types.is_string_dtype(s)):
+            continue
+        sample = s.dropna().astype(str)
+        if sample.empty:
+            continue
+        if sample.str.fullmatch(r"\d+").all():
+            continue
+        name_hint = str(col).lower()
+        has_hint = any(token in name_hint for token in ("date", "time", "timestamp", "datetime"))
+        has_separator = sample.str.contains(r"[-/:T ]").any()
+        parsed = pd.to_datetime(sample, errors="coerce")
+        if parsed.notna().mean() >= 0.8 and (has_hint or has_separator):
+            return col
     return None
+
 if strategy == "1":
     series = series.interpolate(method="linear")
 elif strategy == "2":
@@ -525,12 +585,59 @@ elif strategy == "3":
 elif strategy == "4":
     series = series
 elif strategy == "5":
+    original_index = df.index
+    temp_index_set = False
+    if not isinstance(df.index, pd.DatetimeIndex):
+        date_col = _resolve_datetime_column(df)
+        if date_col:
+            try:
+                df.index = pd.DatetimeIndex(pd.to_datetime(df[date_col], errors="coerce"))
+                temp_index_set = True
+            except Exception:
+                pass
     if not isinstance(df.index, pd.DatetimeIndex):
         raise ValueError("Seasonal imputation requires DatetimeIndex")
-    season_key = _season_key_from_frequency(df.index)
+    freq = df.index.inferred_freq or pd.infer_freq(df.index)
+    if not freq:
+        sorted_idx = df.index.sort_values().drop_duplicates()
+        if len(sorted_idx) >= 2:
+            deltas = sorted_idx.to_series().diff().dropna()
+            if not deltas.empty:
+                dominant_delta_days = deltas.mode().iloc[0].days
+                if 28 <= dominant_delta_days <= 31:
+                    freq = "MS"
+                elif 89 <= dominant_delta_days <= 93:
+                    freq = "QS"
+                elif dominant_delta_days == 7:
+                    freq = "W"
+                elif dominant_delta_days == 1:
+                    freq = "D"
+                else:
+                    freq = f"{dominant_delta_days}D"
+    if not freq:
+        if temp_index_set:
+            df.index = original_index
+        raise ValueError("Seasonal imputation requires a regular DatetimeIndex")
+
+    def _season_key_from_frequency_local(idx, f):
+        if f.startswith("W"):
+            return idx.isocalendar().week
+        if f.startswith("Q"):
+            return idx.quarter
+        if f.startswith("M"):
+            return idx.month
+        if f in {"D", "B"} or (f.endswith("D") and f[:-1].isdigit()):
+            return idx.dayofweek
+        return None
+
+    season_key = _season_key_from_frequency_local(df.index, freq)
     if season_key is None:
-        raise ValueError("Seasonal imputation requires a regular daily, weekly, monthly, or quarterly index")
+        if temp_index_set:
+            df.index = original_index
+        raise ValueError("Seasonal imputation requires daily, weekly, monthly, or quarterly index")
     series = series.groupby(season_key).transform(lambda x: x.fillna(x.mean()))
+    if temp_index_set:
+        df.index = original_index
 elif strategy == "6":
     from sklearn.impute import KNNImputer
     numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -737,6 +844,19 @@ if df is None:
 
 x_col = payload.get("x_col") or payload.get("x")
 chart_type = payload.get("chart_type") or payload.get("plot_type")
+title = payload.get("title")
+x_label = payload.get("x_label")
+y_label = payload.get("y_label")
+y2_label = payload.get("y2_label")
+style_config = payload.get("style_config") or {}
+
+plt.style.use("default")
+if style_config:
+    matplotlib_params = {k: v for k, v in style_config.items() if not k.startswith("custom.")}
+    plt.rcParams.update(matplotlib_params)
+
+primary_colors = style_config.get("custom.primary_colors", ["#1f77b4", "#2ca02c", "#9467bd", "#00bcd4", "#4caf50"])
+secondary_colors = style_config.get("custom.secondary_colors", ["#ff7f0e", "#d62728", "#8c564b", "#e377c2", "#ff9800"])
 
 y_axes = payload.get("y_axes") or []
 primary_cols = []
@@ -779,31 +899,37 @@ if chart_type == "2":
     total = max(len(all_cols), 1)
     bar_width = 0.8 / total
     offset = -((total - 1) / 2) * bar_width
-    for col in primary_cols:
-        ax.bar([i + offset for i in indices], df[col], width=bar_width, label=col)
+    for i, col in enumerate(primary_cols):
+        color = primary_colors[i % len(primary_colors)]
+        ax.bar([idx + offset for idx in indices], df[col], width=bar_width, label=col, color=color)
         offset += bar_width
     if ax2:
-        for col in secondary_cols:
-            ax2.bar([i + offset for i in indices], df[col], width=bar_width, label=f"{col} (secondary)", alpha=0.8)
+        for i, col in enumerate(secondary_cols):
+            color = secondary_colors[i % len(secondary_colors)]
+            ax2.bar([idx + offset for idx in indices], df[col], width=bar_width, label=f"{col} (secondary)", alpha=0.8, color=color)
             offset += bar_width
 elif chart_type == "3":
-    for col in primary_cols:
-        ax.scatter(x_data, df[col], label=col)
+    for i, col in enumerate(primary_cols):
+        color = primary_colors[i % len(primary_colors)]
+        ax.scatter(x_data, df[col], label=col, color=color)
     if ax2:
-        for col in secondary_cols:
-            ax2.scatter(x_data, df[col], label=f"{col} (secondary)")
+        for i, col in enumerate(secondary_cols):
+            color = secondary_colors[i % len(secondary_colors)]
+            ax2.scatter(x_data, df[col], label=f"{col} (secondary)", color=color)
 else:
-    for col in primary_cols:
-        ax.plot(x_data, df[col], label=col)
+    for i, col in enumerate(primary_cols):
+        color = primary_colors[i % len(primary_colors)]
+        ax.plot(x_data, df[col], label=col, color=color)
     if ax2:
-        for col in secondary_cols:
-            ax2.plot(x_data, df[col], label=f"{col} (secondary)")
+        for i, col in enumerate(secondary_cols):
+            color = secondary_colors[i % len(secondary_colors)]
+            ax2.plot(x_data, df[col], label=f"{col} (secondary)", color=color)
 
-ax.set_title(", ".join(all_cols) + " vs " + (x_col or "Date"))
-ax.set_xlabel(x_col or "Date")
-ax.set_ylabel("Primary Values" if primary_cols else "Values")
+ax.set_title(title if title else (", ".join(all_cols) + " vs " + (x_col or "Date")))
+ax.set_xlabel(x_label if x_label else (x_col or "Date"))
+ax.set_ylabel(y_label if y_label else ("Primary Values" if primary_cols else "Values"))
 if ax2 and secondary_cols:
-    ax2.set_ylabel("Secondary Values")
+    ax2.set_ylabel(y2_label if y2_label else "Secondary Values")
 
 handles, labels = ax.get_legend_handles_labels()
 if ax2:
@@ -811,6 +937,15 @@ if ax2:
     handles += handles2
     labels += labels2
 ax.legend(handles, labels, frameon=False)
+
+if ax2:
+    y1_min, y1_max = ax.get_ylim()
+    y2_min, y2_max = ax2.get_ylim()
+    if (y1_min < 0 < y1_max) or (y2_min < 0 < y2_max):
+        max_abs1 = max(abs(y1_min), abs(y1_max))
+        ax.set_ylim(-max_abs1, max_abs1)
+        max_abs2 = max(abs(y2_min), abs(y2_max))
+        ax2.set_ylim(-max_abs2, max_abs2)
 
 buffer = io.BytesIO()
 fig.tight_layout()

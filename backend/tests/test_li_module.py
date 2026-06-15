@@ -81,7 +81,7 @@ def test_run_api_raises_when_no_queries(fake_storage):
     analyzer = FakeAnalyzer(pd.DataFrame())
     module = build_module(fake_storage, generator, fetcher, analyzer)
 
-    with pytest.raises(ValueError, match="Не вдалося згенерувати запити"):
+    with pytest.raises(ValueError, match="Failed to generate search queries."):
         module.run_api(
             primary_df=primary_df,
             target_col="target",
@@ -100,7 +100,7 @@ def test_run_api_raises_when_trends_empty(fake_storage):
     analyzer = FakeAnalyzer(pd.DataFrame())
     module = build_module(fake_storage, generator, fetcher, analyzer)
 
-    with pytest.raises(ValueError, match="Дані Google Trends відсутні"):
+    with pytest.raises(ValueError, match="No Google Trends data available."):
         module.run_api(
             primary_df=primary_df,
             target_col="target",

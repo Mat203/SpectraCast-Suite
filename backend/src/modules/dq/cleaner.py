@@ -3,12 +3,16 @@ import pandas as pd
 import numpy as np
 from sklearn.impute import KNNImputer
 from backend.src.modules.dq.outliers import apply_outlier_strategy
+from backend.src.core.date_utils import detect_datetime_column, infer_frequency_from_index
 
 class DataCleaner:
     def __init__(self, df: pd.DataFrame):
         self.df = df.copy()
         self.logger = logging.getLogger(__name__)
         self._column_precisions = {}
+
+    def _resolve_datetime_column(self) -> str | None:
+        return detect_datetime_column(self.df)
 
     def _get_target_precision(self, column: str) -> int:
         if column in self._column_precisions:
@@ -57,16 +61,31 @@ class DataCleaner:
             self.df[column] = self.df[column].interpolate(method='spline', order=3)
         elif method == '3':
             self.df[column] = self.df[column].ffill()
-        elif method == '4':
-            self.logger.warning("Backward fill is disabled to avoid look-ahead bias.")
             return
         elif method == '5':
+            original_index = self.df.index
+            temp_index_set = False
+
+            if not isinstance(self.df.index, pd.DatetimeIndex):
+                date_col = self._resolve_datetime_column()
+                if date_col:
+                    try:
+                        self.df.index = pd.DatetimeIndex(pd.to_datetime(self.df[date_col], errors="coerce"))
+                        temp_index_set = True
+                    except Exception:
+                        pass
+
             if not isinstance(self.df.index, pd.DatetimeIndex):
                 print("Error: Seasonal imputation requires DatetimeIndex.")
                 return
 
             freq = self.df.index.inferred_freq or pd.infer_freq(self.df.index)
             if not freq:
+                freq, _ = infer_frequency_from_index(self.df.index)
+
+            if not freq:
+                if temp_index_set:
+                    self.df.index = original_index
                 print("Error: Seasonal imputation requires a regular DatetimeIndex.")
                 return
 
@@ -79,10 +98,15 @@ class DataCleaner:
             elif freq in {"D", "B"} or (freq.endswith("D") and freq[:-1].isdigit()):
                 season_key = self.df.index.dayofweek
             else:
+                if temp_index_set:
+                    self.df.index = original_index
                 print("Error: Seasonal imputation requires daily, weekly, monthly, or quarterly data.")
                 return
 
             self.df[column] = self.df.groupby(season_key)[column].transform(lambda x: x.fillna(x.mean()))
+
+            if temp_index_set:
+                self.df.index = original_index
         elif method == '6':
             numeric_cols = self.df.select_dtypes(include=[np.number]).columns
             imputer = KNNImputer(n_neighbors=5)

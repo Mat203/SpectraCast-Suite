@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from backend.src.api.db import get_db
 from backend.src.api.db_models import Dataset, DatasetFileMeta, User, UserOnboardingState
-from backend.src.api.deps import get_current_user
+from backend.src.api.deps import get_current_user, get_storage
+from backend.src.api.services.storage import StorageService
 
 router = APIRouter()
 
@@ -15,6 +16,8 @@ class DatasetInfo(BaseModel):
     file_id: str
     original_filename: Optional[str] = None
     is_modified: Optional[bool] = False
+    has_chart: bool = False
+    chart_filename: Optional[str] = None
 
 
 class UserProfileResponse(BaseModel):
@@ -33,6 +36,7 @@ class OnboardResponse(BaseModel):
 def get_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     dataset_rows = (
         db.query(Dataset.file_uuid, DatasetFileMeta.original_filename, Dataset.is_modified)
@@ -41,10 +45,20 @@ def get_profile(
         .order_by(Dataset.id.desc())
         .all()
     )
-    datasets = [
-        DatasetInfo(file_id=row[0], original_filename=row[1], is_modified=row[2])
-        for row in dataset_rows
-    ]
+    datasets = []
+    for row in dataset_rows:
+        file_uuid, original_filename, is_modified = row
+        chart_filename = f"plot_{file_uuid}.png"
+        has_chart = storage.exists(storage.join_key("outputs", chart_filename))
+        datasets.append(
+            DatasetInfo(
+                file_id=file_uuid,
+                original_filename=original_filename,
+                is_modified=is_modified,
+                has_chart=has_chart,
+                chart_filename=chart_filename if has_chart else None,
+            )
+        )
     onboarding_state = (
         db.query(UserOnboardingState)
         .filter(UserOnboardingState.user_id == current_user.id)
@@ -80,5 +94,5 @@ def set_onboarded(
     return OnboardResponse(
         status="success",
         message="Onboarding completed",
-        is_onboarded=False,
+        is_onboarded=True,
     )

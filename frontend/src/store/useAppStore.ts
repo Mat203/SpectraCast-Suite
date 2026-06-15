@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { OutlierStrategyKey } from '../lib/outlierStrategies';
 import type { MissingStrategyKey } from '../lib/missingValueStrategies';
+import { apiFetch } from '../lib/api';
 
 export type VisualStandardizerTab = 'plot_generator' | 'code_standardizer' | 'style_creator';
 
@@ -23,10 +24,16 @@ interface DataQualityState {
   isMissingPanelVisible: boolean;
 }
 
-interface DataQualityUiState {
+interface SharedUiState {
   isDragging: boolean;
   isLoading: boolean;
   error: string | null;
+  recentDatasets: unknown[];
+  isLoadingRecent: boolean;
+  recentError: string | null;
+}
+
+interface DataQualityUiState extends SharedUiState {
   report: unknown | null;
   toastMessage: string | null;
   isFixingTimestamps: boolean;
@@ -41,9 +48,6 @@ interface DataQualityUiState {
   missingPreviewData: unknown | null;
   isMissingPreviewLoading: boolean;
   missingPreviewError: string | null;
-  recentDatasets: unknown[];
-  isLoadingRecent: boolean;
-  recentError: string | null;
 }
 
 interface LeadingIndicatorsState {
@@ -53,14 +57,8 @@ interface LeadingIndicatorsState {
   extraContext: string;
 }
 
-interface LeadingIndicatorsUiState {
-  isDragging: boolean;
-  isLoading: boolean;
-  error: string | null;
+interface LeadingIndicatorsUiState extends SharedUiState {
   result: unknown | null;
-  recentDatasets: unknown[];
-  isLoadingRecent: boolean;
-  recentError: string | null;
 }
 
 type LeadingIndicatorsToastMode = 'progress' | 'done' | 'error';
@@ -92,26 +90,17 @@ interface VisualStandardizerState {
   outputFilename: string;
   codeStyle: string;
   rawCode: string;
+  title: string;
+  xLabel: string;
+  yLabel: string;
+  y2Label: string;
 }
 
-interface VisualStandardizerUiState {
-  isDragging: boolean;
-  isLoading: boolean;
-  error: string | null;
+interface VisualStandardizerUiState extends SharedUiState {
   styles: string[];
   plotResult: unknown | null;
-  recentDatasets: unknown[];
-  isLoadingRecent: boolean;
-  recentError: string | null;
   cleanedCode: string;
   chartCode: string;
-}
-
-interface VisualStandardizerSessionState {
-  file: File | null;
-  fileId: string | null;
-  originalFilename: string | null;
-  columns: string[];
 }
 
 export interface AppStoreState {
@@ -123,7 +112,6 @@ export interface AppStoreState {
   leadingIndicatorsStream: LeadingIndicatorsStreamState;
   visualStandardizer: VisualStandardizerState;
   visualStandardizerUi: VisualStandardizerUiState;
-  visualStandardizerSession: VisualStandardizerSessionState;
   setActiveDataset: (updates: Partial<ActiveDatasetState>) => void;
   setDatasetColumns: (columns: string[]) => void;
   resetActiveDataset: () => void;
@@ -139,8 +127,8 @@ export interface AppStoreState {
   dismissLeadingIndicatorsToast: () => void;
   setVisualStandardizer: (updates: Partial<VisualStandardizerState>) => void;
   setVisualStandardizerUi: (updates: Partial<VisualStandardizerUiState>) => void;
-  setVisualStandardizerSession: (updates: Partial<VisualStandardizerSessionState>) => void;
   resetAppState: () => void;
+  loadRecentDatasets: () => Promise<void>;
 }
 
 const initialState = {
@@ -218,6 +206,10 @@ const initialState = {
     outputFilename: 'plot.png',
     codeStyle: '',
     rawCode: '',
+    title: '',
+    xLabel: '',
+    yLabel: '',
+    y2Label: '',
   },
   visualStandardizerUi: {
     isDragging: false,
@@ -230,12 +222,6 @@ const initialState = {
     recentError: null,
     cleanedCode: '',
     chartCode: '',
-  },
-  visualStandardizerSession: {
-    file: null,
-    fileId: null,
-    originalFilename: null,
-    columns: [] as string[],
   },
 } as const;
 
@@ -339,29 +325,52 @@ export const useAppStore = create<AppStoreState>()(
             ...updates,
           },
         })),
-      setVisualStandardizerSession: (updates) =>
-        set((state) => ({
-          visualStandardizerSession: {
-            ...state.visualStandardizerSession,
-            ...updates,
-          },
-        })),
       resetAppState: () =>
         set({
           ...initialState,
         }),
+      loadRecentDatasets: async () => {
+        set((state) => ({
+          dataQualityUi: { ...state.dataQualityUi, isLoadingRecent: true, recentError: null },
+          leadingIndicatorsUi: { ...state.leadingIndicatorsUi, isLoadingRecent: true, recentError: null },
+          visualStandardizerUi: { ...state.visualStandardizerUi, isLoadingRecent: true, recentError: null },
+        }));
+
+        try {
+          const response = await apiFetch('/api/users/me');
+          if (!response.ok) {
+            throw new Error('Failed to load recent datasets');
+          }
+          const data = (await response.json()) as { datasets?: any[] };
+          const recent = (data.datasets || []).slice(0, 20);
+
+          set((state) => ({
+            dataQualityUi: { ...state.dataQualityUi, recentDatasets: recent, isLoadingRecent: false },
+            leadingIndicatorsUi: { ...state.leadingIndicatorsUi, recentDatasets: recent, isLoadingRecent: false },
+            visualStandardizerUi: { ...state.visualStandardizerUi, recentDatasets: recent, isLoadingRecent: false },
+          }));
+        } catch (err) {
+          const errMsgSimple = err instanceof Error ? err.message : 'Failed to load recent datasets';
+          set((state) => ({
+            dataQualityUi: { ...state.dataQualityUi, recentError: errMsgSimple, isLoadingRecent: false },
+            leadingIndicatorsUi: { ...state.leadingIndicatorsUi, recentError: errMsgSimple, isLoadingRecent: false },
+            visualStandardizerUi: { ...state.visualStandardizerUi, recentError: errMsgSimple, isLoadingRecent: false },
+          }));
+        }
+      },
     }),
     {
       name: 'spectracast_app_state',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
+        // Active dataset metadata (file object excluded — not serializable)
         activeDataset: { ...state.activeDataset, file: null },
+        // User strategy/column preferences only — NOT error/loading/preview state
         dataQuality: state.dataQuality,
-        dataQualityUi: state.dataQualityUi,
+        // Leading indicators form choices
         leadingIndicators: state.leadingIndicators,
-        leadingIndicatorsUi: state.leadingIndicatorsUi,
+        // Visual standardizer user choices (axis, style, labels, etc.)
         visualStandardizer: state.visualStandardizer,
-        visualStandardizerUi: state.visualStandardizerUi,
       }),
     },
   ),

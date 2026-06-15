@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.src.api.models.vs import GeneratePlotRequest, GeneratePlotResponse, StandardizeCodeRequest, StandardizeCodeResponse
 from backend.src.api.db import get_db
 from backend.src.api.db_models import User
-from backend.src.api.deps import get_current_user
+from backend.src.api.deps import get_current_user, get_storage
 from backend.src.api.services.datasets import require_dataset_owner, require_dataset_owner_for_filename
 from backend.src.api.services.storage import StorageService
 from backend.src.core.loader import DataLoader
@@ -15,7 +15,6 @@ from backend.src.modules.vs.visualizer import VisualStandardizer
 from backend.src.modules.vs.code_builder import build_plot_source_code
 
 router = APIRouter()
-storage = StorageService()
 
 from pydantic import BaseModel
 from typing import List
@@ -66,6 +65,7 @@ def generate_plot(
     request: GeneratePlotRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
     if request.is_cleaned:
@@ -109,6 +109,10 @@ def generate_plot(
         chart_type=chart_type,
         filename=output_filename,
         secondary_cols=secondary_cols,
+        title=request.title,
+        x_label=request.x_label,
+        y_label=request.y_label,
+        y2_label=request.y2_label,
     )
 
     if not output_path or not output_path.exists():
@@ -124,6 +128,10 @@ def generate_plot(
         secondary_cols=secondary_cols,
         chart_type=chart_type,
         style_name=request.style_filename or request.style_name,
+        title=request.title,
+        x_label=request.x_label,
+        y_label=request.y_label,
+        y2_label=request.y2_label,
     )
 
     return GeneratePlotResponse(
@@ -137,6 +145,7 @@ def get_plot(
     filename: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner_for_filename(db, current_user.id, filename)
     key = storage.join_key("outputs", filename)
@@ -146,11 +155,29 @@ def get_plot(
 
     return StreamingResponse(storage.stream_object(key), media_type="image/png")
 
+
+@router.delete("/plot/{filename}")
+def delete_plot(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
+):
+    require_dataset_owner_for_filename(db, current_user.id, filename)
+    key = storage.join_key("outputs", filename)
+
+    if not storage.exists(key):
+        raise HTTPException(status_code=404, detail="Plot not found")
+
+    storage.delete(key)
+    return {"status": "success", "message": "Plot deleted"}
+
 @router.get("/download/{filename}")
 def download_plot(
     filename: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner_for_filename(db, current_user.id, filename)
     key = storage.join_key("outputs", filename)

@@ -32,22 +32,34 @@ def test_google_login_creates_user(client, monkeypatch):
     assert "access_token" in response.json()
 
 
-def test_users_profile_and_onboard(auth_client, db_session, test_user):
+def test_users_profile_and_onboard(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.db_models import Dataset, DatasetFileMeta, UserOnboardingState
+    from backend.src.api.routes import users
 
-    dataset = Dataset(user_id=test_user.id, file_uuid="file-123", is_modified=True)
-    meta = DatasetFileMeta(user_id=test_user.id, file_uuid="file-123", original_filename="data.csv")
+    dataset1 = Dataset(user_id=test_user.id, file_uuid="file-123", is_modified=True)
+    meta1 = DatasetFileMeta(user_id=test_user.id, file_uuid="file-123", original_filename="data.csv")
+
+    dataset2 = Dataset(user_id=test_user.id, file_uuid="file-456", is_modified=False)
+    meta2 = DatasetFileMeta(user_id=test_user.id, file_uuid="file-456", original_filename="data2.csv")
+
     onboarding = UserOnboardingState(user_id=test_user.id, is_onboarded=True)
-    db_session.add_all([dataset, meta, onboarding])
+    db_session.add_all([dataset1, meta1, dataset2, meta2, onboarding])
     db_session.commit()
+
+    fake_storage.put_text("outputs/plot_file-123.png", "fake png data")
 
     response = auth_client.get("/api/users/me")
     assert response.status_code == 200
     payload = response.json()
     assert payload["email"] == "test@example.com"
-    assert payload["datasets"][0]["file_id"] == "file-123"
-    assert payload["datasets"][0]["original_filename"] == "data.csv"
-    assert payload["datasets"][0]["is_modified"] is True
+    assert payload["datasets"][0]["file_id"] == "file-456"
+    assert payload["datasets"][0]["has_chart"] is False
+    assert payload["datasets"][0]["chart_filename"] is None
+    assert payload["datasets"][1]["file_id"] == "file-123"
+    assert payload["datasets"][1]["original_filename"] == "data.csv"
+    assert payload["datasets"][1]["is_modified"] is True
+    assert payload["datasets"][1]["has_chart"] is True
+    assert payload["datasets"][1]["chart_filename"] == "plot_file-123.png"
     assert payload["is_onboarded"] is True
 
     onboard_response = auth_client.patch("/api/users/me/onboard")

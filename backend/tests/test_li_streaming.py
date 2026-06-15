@@ -2,8 +2,8 @@ import pandas as pd
 import pytest
 import numpy as np
 from typing import Optional
-
-from backend.src.modules.li.streaming import stream_leading_indicator_events, _convert_numpy_types
+from backend.src.core.utils import convert_numpy_types
+from backend.src.modules.li.streaming import stream_leading_indicator_events
 
 
 class FakeGenerator:
@@ -61,12 +61,12 @@ def mock_run_sync(monkeypatch):
 
 
 def test_convert_numpy_types():
-    assert _convert_numpy_types(np.int64(5)) == 5
-    assert _convert_numpy_types(np.float64(3.14)) == 3.14
-    assert _convert_numpy_types(np.array([1, 2])) == [1, 2]
-    assert _convert_numpy_types({"a": np.int32(1)}) == {"a": 1}
-    assert _convert_numpy_types([np.float32(1.5)]) == [1.5]
-    assert _convert_numpy_types("standard_string") == "standard_string"
+    assert convert_numpy_types(np.int64(5)) == 5
+    assert convert_numpy_types(np.float64(3.14)) == 3.14
+    assert convert_numpy_types(np.array([1, 2])) == [1, 2]
+    assert convert_numpy_types({"a": np.int32(1)}) == {"a": 1}
+    assert convert_numpy_types([np.float32(1.5)]) == [1.5]
+    assert convert_numpy_types("standard_string") == "standard_string"
 
 
 @pytest.mark.anyio

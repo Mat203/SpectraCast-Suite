@@ -12,10 +12,9 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import type { ModuleKey } from './components/Sidebar'
 import { UserProvider, useUser } from './lib/userContext.tsx'
 import { ComputeModeProvider } from './lib/ComputeModeContext.jsx'
+import { DeviceBlocker } from './components/DeviceBlocker'
 
-const Dashboard = () => {
-  const [activeModule, setActiveModule] = useState<ModuleKey>('dq')
-
+const Dashboard = ({ activeModule, setActiveModule }: { activeModule: ModuleKey; setActiveModule: (module: ModuleKey) => void }) => {
   return (
     <Layout activeModule={activeModule} onModuleChange={setActiveModule}>
       {activeModule === 'dq' && <DataQualityView />}
@@ -25,9 +24,7 @@ const Dashboard = () => {
   )
 }
 
-const ProfilePage = () => {
-  const [activeModule, setActiveModule] = useState<ModuleKey>('dq')
-
+const ProfilePage = ({ activeModule, setActiveModule }: { activeModule: ModuleKey; setActiveModule: (module: ModuleKey) => void }) => {
   return (
     <Layout activeModule={activeModule} onModuleChange={setActiveModule}>
       <Profile />
@@ -35,7 +32,7 @@ const ProfilePage = () => {
   )
 }
 
-const DashboardRoute = () => {
+const DashboardRoute = ({ activeModule, setActiveModule }: { activeModule: ModuleKey; setActiveModule: (module: ModuleKey) => void }) => {
   const { user, isLoading, refreshUser } = useUser()
 
   useEffect(() => {
@@ -56,7 +53,7 @@ const DashboardRoute = () => {
     return <Navigate to="/welcome" replace />
   }
 
-  return <Dashboard />
+  return <Dashboard activeModule={activeModule} setActiveModule={setActiveModule} />
 }
 
 const WelcomeRoute = () => {
@@ -84,43 +81,47 @@ const WelcomeRoute = () => {
 }
 
 function App() {
+  const [activeModule, setActiveModule] = useState<ModuleKey>('dq')
+
   return (
-    <UserProvider>
-      <ComputeModeProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Navigate to="/app" replace />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route
-              path="/welcome"
-              element={
-                <ProtectedRoute>
-                  <WelcomeRoute />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/app"
-              element={
-                <ProtectedRoute>
-                  <DashboardRoute />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <ProtectedRoute>
-                  <ProfilePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="*" element={<Navigate to="/app" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </ComputeModeProvider>
-    </UserProvider>
+    <DeviceBlocker>
+      <UserProvider>
+        <ComputeModeProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Navigate to="/app" replace />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route
+                path="/welcome"
+                element={
+                  <ProtectedRoute>
+                    <WelcomeRoute />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app"
+                element={
+                  <ProtectedRoute>
+                    <DashboardRoute activeModule={activeModule} setActiveModule={setActiveModule} />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <ProfilePage activeModule={activeModule} setActiveModule={setActiveModule} />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<Navigate to="/app" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </ComputeModeProvider>
+      </UserProvider>
+    </DeviceBlocker>
   )
 }
 

@@ -5,6 +5,7 @@ import { useComputeMode } from '../lib/ComputeModeContext.jsx';
 import { LOCAL_LI_RUN_CODE } from '../lib/localComputeScripts';
 import { useAppStore } from '../store/useAppStore';
 import type { AppStoreState } from '../store/useAppStore';
+import { FileUpload } from './FileUpload';
 
 interface UploadResponse {
   status: string;
@@ -57,6 +58,8 @@ export const LeadingIndicatorsView: React.FC = () => {
   const setGeoCode = (value: string) => setLeadingIndicators({ geoCode: value });
   const setExtraContext = (value: string) => setLeadingIndicators({ extraContext: value });
 
+  const loadRecentDatasets = useAppStore((state: AppStoreState) => state.loadRecentDatasets);
+
   const {
     isDragging,
     isLoading,
@@ -74,11 +77,8 @@ export const LeadingIndicatorsView: React.FC = () => {
   const setIsLoading = (value: boolean) => setLeadingIndicatorsUi({ isLoading: value });
   const setError = (value: string | null) => setLeadingIndicatorsUi({ error: value });
   const setResult = (value: LeadingIndicatorsResponse | null) => setLeadingIndicatorsUi({ result: value });
-  const setRecentDatasets = (value: RecentDataset[]) => setLeadingIndicatorsUi({ recentDatasets: value });
-  const setIsLoadingRecent = (value: boolean) => setLeadingIndicatorsUi({ isLoadingRecent: value });
-  const setRecentError = (value: string | null) => setLeadingIndicatorsUi({ recentError: value });
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
 
   const ensureLocalCsv = async () => {
     if (localCsvRef.current) {
@@ -105,41 +105,8 @@ export const LeadingIndicatorsView: React.FC = () => {
   };
 
   useEffect(() => {
-    let isActive = true;
-
-    const fetchRecentDatasets = async () => {
-      setIsLoadingRecent(true);
-      setRecentError(null);
-
-      try {
-        const response = await apiFetch('/api/users/me');
-        if (!response.ok) {
-          throw new Error('Failed to load recent datasets');
-        }
-
-        const data = (await response.json()) as { datasets?: RecentDataset[] };
-        const recent = (data.datasets || []).slice(0, 10);
-
-        if (isActive) {
-          setRecentDatasets(recent);
-        }
-      } catch (err) {
-        if (isActive) {
-          setRecentError(err instanceof Error ? err.message : 'Failed to load recent datasets');
-        }
-      } finally {
-        if (isActive) {
-          setIsLoadingRecent(false);
-        }
-      }
-    };
-
-    fetchRecentDatasets();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
+    loadRecentDatasets();
+  }, [loadRecentDatasets]);
 
   useEffect(() => {
     if (!columns.length) {
@@ -205,26 +172,6 @@ export const LeadingIndicatorsView: React.FC = () => {
     localCsvRef.current = null;
   };
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const droppedFile = e.dataTransfer.files?.[0] ?? null;
-    handleFileSelect(droppedFile);
-  };
-
-  const handleBrowseClick = () => {
-    fileInputRef.current?.click();
-  };
 
 
   const handleSelectRecentDataset = async (dataset: RecentDataset) => {
@@ -440,36 +387,13 @@ export const LeadingIndicatorsView: React.FC = () => {
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
                 <div>
-                  <div
-                    className={`w-full rounded-xl border-2 border-dashed p-8 md:p-12 text-center transition-colors ${isDragging ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400 bg-white'}`}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={handleBrowseClick}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        handleBrowseClick();
-                      }
-                    }}
-                  >
-                    <svg className="mx-auto mb-4 h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-
-                    <p className="text-lg font-semibold text-slate-800">{file ? file.name : 'Click or drag a CSV file here'}</p>
-                    <p className="mt-1 text-sm text-slate-500">{file ? `${(file.size / 1024).toFixed(1)} KB selected` : 'Only .csv files are accepted'}</p>
-
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      className="hidden"
-                      accept=".csv"
-                      onChange={(event) => handleFileSelect(event.target.files?.[0] ?? null)}
-                    />
-                  </div>
+                  <FileUpload
+                    file={file}
+                    isDragging={isDragging}
+                    onFileSelect={handleFileSelect}
+                    setIsDragging={setIsDragging}
+                    accentColor="sky"
+                  />
 
                   <div className="mt-5 flex flex-wrap items-center gap-4">
                     <button

@@ -5,18 +5,7 @@ import numpy as np
 from backend.src.modules.li.li import LeadingIndicatorsModule
 
 
-def _convert_numpy_types(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {k: _convert_numpy_types(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_convert_numpy_types(i) for i in obj]
-    if isinstance(obj, np.integer):
-        return int(obj)
-    if isinstance(obj, np.floating):
-        return float(obj)
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    return obj
+from backend.src.core.utils import convert_numpy_types
 
 
 async def stream_leading_indicator_events(
@@ -67,7 +56,7 @@ async def stream_leading_indicator_events(
 
     top_results_df = results_df.head(10).replace({float('nan'): None})
     top_results_list = top_results_df.to_dict(orient="records")
-    safe_results = _convert_numpy_types(top_results_list)
+    safe_results = convert_numpy_types(top_results_list)
 
     yield {
         "status": "done",

@@ -22,11 +22,6 @@ vi.mock('../lib/useHybridCompute', () => ({
 	}),
 }));
 
-vi.mock('../lib/api', () => ({
-	apiFetch: vi.fn(),
-	downloadFile: vi.fn(),
-	fetchBlobUrl: vi.fn(),
-}));
 
 const createApiResponse = (options: {
 	ok: boolean;

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { apiFetch, downloadFile } from '../lib/api';
+import { apiFetch, downloadFile, fetchBlobUrl } from '../lib/api';
 import { LLM_MODELS, LLM_PROVIDERS } from '../lib/llmModels';
 import type { LlmProvider } from '../lib/llmModels';
 import { ComputeModeToggle } from './ComputeModeToggle';
@@ -8,6 +8,8 @@ interface DatasetInfo {
   file_id: string;
   original_filename?: string | null;
   is_modified?: boolean;
+  has_chart?: boolean;
+  chart_filename?: string | null;
 }
 
 interface ProfileResponse {
@@ -30,6 +32,8 @@ export const Profile: React.FC = () => {
   const [llmSuccess, setLlmSuccess] = useState<string | null>(null);
   const [isValidatingKey, setIsValidatingKey] = useState(false);
   const [isLlmInitialized, setIsLlmInitialized] = useState(false);
+  const [chartUrls, setChartUrls] = useState<Record<string, string>>({});
+  const [deletingChartId, setDeletingChartId] = useState<string | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -72,6 +76,97 @@ export const Profile: React.FC = () => {
       isActive = false;
     };
   }, []);
+
+  useEffect(() => {
+    let isActive = true;
+    const loadedUrls: string[] = [];
+
+    const loadCharts = async () => {
+      if (!profile?.datasets) return;
+
+      const newUrls: Record<string, string> = {};
+      for (const dataset of profile.datasets) {
+        if (dataset.has_chart && dataset.chart_filename) {
+          try {
+            const url = await fetchBlobUrl(`/api/vs/plot/${dataset.chart_filename}`);
+            if (isActive) {
+              newUrls[dataset.file_id] = url;
+              loadedUrls.push(url);
+            } else {
+              URL.revokeObjectURL(url);
+            }
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      }
+      if (isActive) {
+        setChartUrls(newUrls);
+      }
+    };
+
+    loadCharts();
+
+    return () => {
+      isActive = false;
+      loadedUrls.forEach((url) => {
+        if (url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+      });
+    };
+  }, [profile?.datasets]);
+
+  const handleDownloadChart = async (chartFilename: string) => {
+    setError(null);
+    try {
+      await downloadFile(`/api/vs/download/${chartFilename}`, chartFilename);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed.');
+    }
+  };
+
+  const handleDeleteChart = async (fileId: string, chartFilename: string) => {
+    if (!window.confirm('Delete this chart? This action cannot be undone.')) {
+      return;
+    }
+
+    setError(null);
+    setDeletingChartId(fileId);
+
+    try {
+      const response = await apiFetch(`/api/vs/plot/${chartFilename}`, { method: 'DELETE' });
+      if (!response.ok) {
+        throw new Error(await extractApiError(response, 'Delete failed'));
+      }
+
+      setProfile((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          datasets: prev.datasets.map((dataset) =>
+            dataset.file_id === fileId
+              ? { ...dataset, has_chart: false, chart_filename: null }
+              : dataset
+          ),
+        };
+      });
+
+      setChartUrls((prev) => {
+        const next = { ...prev };
+        const url = next[fileId];
+        if (url && url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+        delete next[fileId];
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed.');
+    } finally {
+      setDeletingChartId(null);
+    }
+  };
 
   useEffect(() => {
     const storedKey = localStorage.getItem('user_llm_api_key');
@@ -435,6 +530,86 @@ export const Profile: React.FC = () => {
                 </li>
               ))}
             </ul>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-800">Saved Charts</h3>
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+              {profile?.datasets?.filter((d) => d.has_chart).length ?? 0} total
+            </span>
+          </div>
+
+          {!isLoading && !error && profile && (profile.datasets?.filter((d) => d.has_chart).length ?? 0) === 0 && (
+            <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              No saved charts yet. Generate them in the Visual Standardizer module.
+            </p>
+          )}
+
+          {!isLoading && !error && profile && (profile.datasets?.filter((d) => d.has_chart).length ?? 0) > 0 && (
+            <div className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2">
+              {profile.datasets.filter((d) => d.has_chart).map((dataset) => {
+                const imageUrl = chartUrls[dataset.file_id];
+                return (
+                  <div
+                    key={dataset.file_id}
+                    className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm transition hover:shadow-md"
+                  >
+                    <div className="relative aspect-video w-full border-b border-slate-200 bg-slate-100 flex items-center justify-center overflow-hidden">
+                      {imageUrl ? (
+                        <img
+                          src={imageUrl}
+                          alt={`Chart for ${dataset.original_filename || dataset.file_id}`}
+                          className="h-full w-full object-contain cursor-pointer transition hover:scale-[1.02]"
+                          onClick={() => {
+                            if (imageUrl) {
+                              const w = window.open();
+                              if (w) w.document.write(`<img src="${imageUrl}" style="max-width:100%; max-height:100%; display:block; margin:auto;" />`);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center gap-2 text-slate-400">
+                          <svg className="h-8 w-8 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span className="text-xs">Loading chart preview...</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-1 flex-col p-4 justify-between">
+                      <div className="mb-3">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                          Dataset Source
+                        </span>
+                        <p className="mt-1 text-sm font-bold text-slate-900 truncate">
+                          {dataset.original_filename || dataset.file_id}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadChart(dataset.chart_filename || '')}
+                          disabled={!dataset.chart_filename || deletingChartId === dataset.file_id}
+                          className="w-full inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Download
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteChart(dataset.file_id, dataset.chart_filename || '')}
+                          disabled={!dataset.chart_filename || deletingChartId === dataset.file_id}
+                          className="w-full inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {deletingChartId === dataset.file_id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </section>
       </div>

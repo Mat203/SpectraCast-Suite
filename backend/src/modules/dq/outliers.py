@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from backend.src.core.utils import downsample_preview
 
 VALID_OUTLIER_STRATEGIES = {
     "clip_iqr",
@@ -111,12 +112,9 @@ def preview_outlier_strategy(
     before_values = [None if pd.isna(v) else float(v) for v in series.tolist()]
     after_values = [None if pd.isna(v) else float(v) for v in after_series.tolist()]
 
-    if len(x_values) > max_points:
-        indices = np.linspace(0, len(x_values) - 1, num=max_points, dtype=int)
-        indices = np.unique(indices)
-        x_values = [x_values[i] for i in indices]
-        before_values = [before_values[i] for i in indices]
-        after_values = [after_values[i] for i in indices]
+    x_values, before_values, after_values = downsample_preview(
+        x_values, before_values, after_values, max_points
+    )
 
     return {
         "column": column,

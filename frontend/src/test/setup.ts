@@ -1,6 +1,17 @@
 import '@testing-library/jest-dom';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
+
+vi.mock('../lib/api', () => ({
+  apiFetch: vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ datasets: [] }),
+  }),
+  downloadFile: vi.fn(),
+  fetchBlobUrl: vi.fn(),
+}));
+
 import { useAppStore } from '../store/useAppStore';
 
 class ResizeObserverMock {
