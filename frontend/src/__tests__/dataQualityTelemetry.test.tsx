@@ -24,10 +24,6 @@ vi.mock('../lib/useHybridCompute', () => ({
 	}),
 }));
 
-vi.mock('../lib/api', () => ({
-	apiFetch: vi.fn(),
-	downloadFile: vi.fn(),
-}));
 
 vi.mock('posthog-js', () => ({
 	default: {

@@ -1,4 +1,10 @@
 import pandas as pd
+from backend.src.core.date_utils import (
+    detect_datetime_column,
+    get_fallback_datetime_column,
+    infer_numeric_date_format,
+    parse_datetime_series,
+)
 
 class CorrelationAnalyzer:
     def _coerce_numeric_series(self, series: pd.Series, label: str) -> pd.Series:
@@ -18,81 +24,20 @@ class CorrelationAnalyzer:
         return numeric_frame
 
     def _infer_numeric_date_format(self, sample: pd.Series) -> str | None:
-        if sample.empty or not sample.str.fullmatch(r"\d+").all():
-            return None
-
-        length_counts = sample.str.len().value_counts()
-        length = int(length_counts.idxmax())
-        length_ratio = length_counts.max() / len(sample)
-        if length_ratio < 0.8:
-            return None
-
-        if length == 6:
-            return "%Y%m"
-        if length == 8:
-            return "%Y%m%d"
-        if length == 14:
-            return "%Y%m%d%H%M%S"
-        return None
+        return infer_numeric_date_format(sample)
 
     def _parse_datetime_series(self, series: pd.Series, numeric_format: str | None) -> pd.Series:
-        if numeric_format:
-            return pd.to_datetime(series.astype("string"), format=numeric_format, errors="coerce")
-        return pd.to_datetime(series, errors="coerce")
+        return parse_datetime_series(series, numeric_format)
 
     def _is_valid_datetime_series(self, parsed: pd.Series) -> bool:
-        valid_ratio = parsed.notna().mean()
-        if valid_ratio < 0.8:
-            return False
-
-        non_null = parsed.dropna()
-        if non_null.empty:
-            return False
-
-        year_ratio = non_null.dt.year.between(1900, 2100).mean()
-        return year_ratio >= 0.8
+        from backend.src.core.date_utils import is_valid_datetime_series
+        return is_valid_datetime_series(parsed)
 
     def _get_datetime_column(self, df: pd.DataFrame) -> str | None:
-        for column in df.columns:
-            series = df[column]
-            if pd.api.types.is_datetime64_any_dtype(series):
-                return column
-
-            sample = series.dropna().astype(str)
-            if sample.empty:
-                continue
-
-            numeric_format = self._infer_numeric_date_format(sample)
-            is_candidate = numeric_format is not None or pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series)
-            if not is_candidate:
-                continue
-
-            name_hint = str(column).lower()
-            has_name_hint = any(token in name_hint for token in ("date", "time", "timestamp", "datetime"))
-            has_separator = sample.str.contains(r"[-/:T ]").any()
-            parsed = self._parse_datetime_series(series, numeric_format)
-            if self._is_valid_datetime_series(parsed) and (has_name_hint or has_separator or numeric_format):
-                return column
-
-        return None
+        return detect_datetime_column(df)
 
     def _get_fallback_datetime_column(self, df: pd.DataFrame) -> str | None:
-        if df.empty:
-            return None
-
-        first_col = df.columns[0]
-        series = df[first_col]
-        sample = series.dropna().astype(str)
-        if sample.empty:
-            return None
-
-        numeric_format = self._infer_numeric_date_format(sample)
-        is_candidate = numeric_format is not None or pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series)
-        if not is_candidate:
-            return None
-
-        parsed = self._parse_datetime_series(series, numeric_format)
-        return first_col if self._is_valid_datetime_series(parsed) else None
+        return get_fallback_datetime_column(df)
 
     def _ensure_datetime_index(self, df: pd.DataFrame, label: str) -> pd.DataFrame:
         if isinstance(df.index, pd.DatetimeIndex):
@@ -105,8 +50,8 @@ class CorrelationAnalyzer:
             raise ValueError(f"Datetime column not found in {label} dataset.")
 
         sample = df[datetime_column].dropna().astype(str)
-        numeric_format = self._infer_numeric_date_format(sample)
-        series = self._parse_datetime_series(df[datetime_column], numeric_format)
+        numeric_format = infer_numeric_date_format(sample)
+        series = parse_datetime_series(df[datetime_column], numeric_format)
         valid_mask = series.notna()
         if valid_mask.sum() < 2:
             raise ValueError(f"Not enough datetime values in {label} dataset.")

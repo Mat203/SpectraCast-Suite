@@ -109,7 +109,7 @@ def db_session(db_engine) -> Generator:
 
 
 @pytest.fixture(scope="function")
-def client(db_engine, db_session) -> Generator[TestClient, None, None]:
+def client(db_engine, db_session, fake_storage) -> Generator[TestClient, None, None]:
     db_module.engine = db_engine
     main_module.engine = db_engine
 
@@ -119,12 +119,15 @@ def client(db_engine, db_session) -> Generator[TestClient, None, None]:
         finally:
             db_session.close()
 
+    from backend.src.api.deps import get_storage
     main_module.app.dependency_overrides[get_db] = override_get_db
+    main_module.app.dependency_overrides[get_storage] = lambda: fake_storage
 
     with TestClient(main_module.app) as test_client:
         yield test_client
 
     main_module.app.dependency_overrides.pop(get_db, None)
+    main_module.app.dependency_overrides.pop(get_storage, None)
 
 
 @pytest.fixture(scope="function")

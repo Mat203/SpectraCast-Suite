@@ -1,11 +1,9 @@
 from io import BytesIO
 
 
-def test_upload_and_delete_file(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_upload_and_delete_file(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import upload
     from backend.src.api.db_models import Dataset, DatasetFileMeta
-
-    monkeypatch.setattr(upload, "storage", fake_storage)
 
     file_content = b"col\n1\n2\n"
     files = {"file": ("data.csv", BytesIO(file_content), "text/csv")}

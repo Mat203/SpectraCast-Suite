@@ -7,8 +7,13 @@ import jwt
 from backend.src.api.db import get_db
 from backend.src.api.db_models import User
 from backend.src.api.security import ALGORITHM, SECRET_KEY
+from backend.src.api.services.storage import StorageService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+
+def get_storage() -> StorageService:
+    return StorageService()
 
 
 def get_current_user(

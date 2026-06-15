@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.impute import KNNImputer
 from backend.src.modules.dq.outliers import apply_outlier_strategy
+from backend.src.core.date_utils import detect_datetime_column, infer_frequency_from_index
 
 class DataCleaner:
     def __init__(self, df: pd.DataFrame):
@@ -11,24 +12,7 @@ class DataCleaner:
         self._column_precisions = {}
 
     def _resolve_datetime_column(self) -> str | None:
-        for column in self.df.columns:
-            series = self.df[column]
-            if pd.api.types.is_datetime64_any_dtype(series):
-                return column
-            if not (pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series)):
-                continue
-            sample = series.dropna().astype(str)
-            if sample.empty:
-                continue
-            if sample.str.fullmatch(r"\d+").all():
-                continue
-            name_hint = str(column).lower()
-            has_name_hint = any(token in name_hint for token in ("date", "time", "timestamp", "datetime"))
-            has_separator = sample.str.contains(r"[-/:T ]").any()
-            parsed = pd.to_datetime(sample, errors="coerce")
-            if parsed.notna().mean() >= 0.8 and (has_name_hint or has_separator):
-                return column
-        return None
+        return detect_datetime_column(self.df)
 
     def _get_target_precision(self, column: str) -> int:
         if column in self._column_precisions:
@@ -97,21 +81,7 @@ class DataCleaner:
 
             freq = self.df.index.inferred_freq or pd.infer_freq(self.df.index)
             if not freq:
-                sorted_idx = self.df.index.sort_values().drop_duplicates()
-                if len(sorted_idx) >= 2:
-                    deltas = sorted_idx.to_series().diff().dropna()
-                    if not deltas.empty:
-                        dominant_delta_days = deltas.mode().iloc[0].days
-                        if 28 <= dominant_delta_days <= 31:
-                            freq = "MS"
-                        elif 89 <= dominant_delta_days <= 93:
-                            freq = "QS"
-                        elif dominant_delta_days == 7:
-                            freq = "W"
-                        elif dominant_delta_days == 1:
-                            freq = "D"
-                        else:
-                            freq = f"{dominant_delta_days}D"
+                freq, _ = infer_frequency_from_index(self.df.index)
 
             if not freq:
                 if temp_index_set:

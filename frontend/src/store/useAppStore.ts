@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { OutlierStrategyKey } from '../lib/outlierStrategies';
 import type { MissingStrategyKey } from '../lib/missingValueStrategies';
+import { apiFetch } from '../lib/api';
 
 export type VisualStandardizerTab = 'plot_generator' | 'code_standardizer' | 'style_creator';
 
@@ -145,6 +146,7 @@ export interface AppStoreState {
   setVisualStandardizerUi: (updates: Partial<VisualStandardizerUiState>) => void;
   setVisualStandardizerSession: (updates: Partial<VisualStandardizerSessionState>) => void;
   resetAppState: () => void;
+  loadRecentDatasets: () => Promise<void>;
 }
 
 const initialState = {
@@ -358,6 +360,44 @@ export const useAppStore = create<AppStoreState>()(
         set({
           ...initialState,
         }),
+      loadRecentDatasets: async () => {
+        set((state) => ({
+          dataQualityUi: { ...state.dataQualityUi, isLoadingRecent: true, recentError: null },
+          leadingIndicatorsUi: { ...state.leadingIndicatorsUi, isLoadingRecent: true, recentError: null },
+          visualStandardizerUi: { ...state.visualStandardizerUi, isLoadingRecent: true, recentError: null },
+        }));
+
+        try {
+          const response = await apiFetch('/api/users/me');
+          try {
+            const fs = await import('fs');
+            fs.writeFileSync('response_log.txt', `response ok: ${response?.ok}, status: ${response?.status}, type of response: ${typeof response}, keys: ${response ? Object.keys(response).join(', ') : 'none'}`);
+          } catch (e) {}
+          if (!response.ok) {
+            throw new Error('Failed to load recent datasets');
+          }
+          const data = (await response.json()) as { datasets?: any[] };
+          const recent = (data.datasets || []).slice(0, 10);
+
+          set((state) => ({
+            dataQualityUi: { ...state.dataQualityUi, recentDatasets: recent, isLoadingRecent: false },
+            leadingIndicatorsUi: { ...state.leadingIndicatorsUi, recentDatasets: recent, isLoadingRecent: false },
+            visualStandardizerUi: { ...state.visualStandardizerUi, recentDatasets: recent, isLoadingRecent: false },
+          }));
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message + '\n' + err.stack : String(err);
+          try {
+            const fs = await import('fs');
+            fs.writeFileSync('error_log.txt', errMsg);
+          } catch (e) {}
+          const errMsgSimple = err instanceof Error ? err.message : 'Failed to load recent datasets';
+          set((state) => ({
+            dataQualityUi: { ...state.dataQualityUi, recentError: errMsgSimple, isLoadingRecent: false },
+            leadingIndicatorsUi: { ...state.leadingIndicatorsUi, recentError: errMsgSimple, isLoadingRecent: false },
+            visualStandardizerUi: { ...state.visualStandardizerUi, recentError: errMsgSimple, isLoadingRecent: false },
+          }));
+        }
+      },
     }),
     {
       name: 'spectracast_app_state',

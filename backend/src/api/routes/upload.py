@@ -4,19 +4,19 @@ from sqlalchemy.orm import Session
 
 from backend.src.api.db import get_db
 from backend.src.api.db_models import Dataset, DatasetFileMeta, User
-from backend.src.api.deps import get_current_user
+from backend.src.api.deps import get_current_user, get_storage
 from backend.src.api.services.datasets import require_dataset_owner
 from backend.src.api.services.storage import StorageService
 
 router = APIRouter()
 
-storage = StorageService()
 
 @router.post("")
 async def upload_file(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     original_filename = file.filename or "uploaded.csv"
 
@@ -48,6 +48,7 @@ def delete_file(
     file_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, file_id)
 

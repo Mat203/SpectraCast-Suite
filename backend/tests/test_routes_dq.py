@@ -1,4 +1,4 @@
-def test_dq_scan_returns_report(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_dq_scan_returns_report(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import dq
     from backend.src.api.db_models import Dataset
 
@@ -10,8 +10,6 @@ def test_dq_scan_returns_report(auth_client, db_session, test_user, fake_storage
     key = fake_storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
     fake_storage.put_text(key, "date,price\n2024-01-01,100\n2024-01-02,101\n")
 
-    monkeypatch.setattr(dq, "storage", fake_storage)
-
     response = auth_client.post("/api/dq/scan", json={"file_id": file_id})
 
     assert response.status_code == 200
@@ -21,7 +19,7 @@ def test_dq_scan_returns_report(auth_client, db_session, test_user, fake_storage
     assert payload["is_modified"] is False
 
 
-def test_dq_clean_writes_output(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_dq_clean_writes_output(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import dq
     from backend.src.api.db_models import Dataset
 
@@ -32,8 +30,6 @@ def test_dq_clean_writes_output(auth_client, db_session, test_user, fake_storage
 
     key = fake_storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
     fake_storage.put_text(key, "date,price\n2024-01-01,100\n2024-01-02,\n")
-
-    monkeypatch.setattr(dq, "storage", fake_storage)
 
     payload = {
         "file_id": file_id,
@@ -50,7 +46,7 @@ def test_dq_clean_writes_output(auth_client, db_session, test_user, fake_storage
     assert fake_storage.exists(body["saved_path"])
 
 
-def test_dq_handle_outliers_updates_dataset(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_dq_handle_outliers_updates_dataset(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import dq
     from backend.src.api.db_models import Dataset
 
@@ -62,8 +58,6 @@ def test_dq_handle_outliers_updates_dataset(auth_client, db_session, test_user, 
     key = fake_storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
     fake_storage.put_text(key, "value\n1\n2\n1000\n3\n")
 
-    monkeypatch.setattr(dq, "storage", fake_storage)
-
     response = auth_client.post(
         "/api/dq/handle-outliers",
         json={"file_id": file_id, "column": "value", "strategy": "median"},
@@ -74,7 +68,7 @@ def test_dq_handle_outliers_updates_dataset(auth_client, db_session, test_user, 
     assert updated_df["value"].max() < 1000
 
 
-def test_dq_preview_outliers_returns_series(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_dq_preview_outliers_returns_series(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import dq
     from backend.src.api.db_models import Dataset
 
@@ -85,8 +79,6 @@ def test_dq_preview_outliers_returns_series(auth_client, db_session, test_user, 
 
     key = fake_storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
     fake_storage.put_text(key, "value\n1\n2\n1000\n3\n")
-
-    monkeypatch.setattr(dq, "storage", fake_storage)
 
     response = auth_client.post(
         "/api/dq/preview-outliers",
@@ -99,7 +91,7 @@ def test_dq_preview_outliers_returns_series(auth_client, db_session, test_user, 
     assert len(payload["before"]) == len(payload["after"])
 
 
-def test_dq_handle_missing_updates_dataset(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_dq_handle_missing_updates_dataset(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import dq
     from backend.src.api.db_models import Dataset
 
@@ -111,8 +103,6 @@ def test_dq_handle_missing_updates_dataset(auth_client, db_session, test_user, f
     key = fake_storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
     fake_storage.put_text(key, "value\n1\n\n3\n")
 
-    monkeypatch.setattr(dq, "storage", fake_storage)
-
     response = auth_client.post(
         "/api/dq/handle-missing",
         json={"file_id": file_id, "column": "value", "strategy": "3"},
@@ -123,7 +113,7 @@ def test_dq_handle_missing_updates_dataset(auth_client, db_session, test_user, f
     assert updated_df["value"].isna().sum() == 0
 
 
-def test_dq_preview_missing_returns_series(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_dq_preview_missing_returns_series(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import dq
     from backend.src.api.db_models import Dataset
 
@@ -134,8 +124,6 @@ def test_dq_preview_missing_returns_series(auth_client, db_session, test_user, f
 
     key = fake_storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
     fake_storage.put_text(key, "value\n1\n\n3\n")
-
-    monkeypatch.setattr(dq, "storage", fake_storage)
 
     response = auth_client.post(
         "/api/dq/preview-missing",
@@ -148,7 +136,7 @@ def test_dq_preview_missing_returns_series(auth_client, db_session, test_user, f
     assert len(payload["before"]) == len(payload["after"])
 
 
-def test_dq_fix_timestamps_inserts_rows(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_dq_fix_timestamps_inserts_rows(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import dq
     from backend.src.api.db_models import Dataset
 
@@ -160,8 +148,6 @@ def test_dq_fix_timestamps_inserts_rows(auth_client, db_session, test_user, fake
     key = fake_storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
     fake_storage.put_text(key, "date,value\n2024-01-01,1\n2024-01-02,2\n2024-01-04,4\n")
 
-    monkeypatch.setattr(dq, "storage", fake_storage)
-
     response = auth_client.post("/api/dq/fix-timestamps", json={"file_id": file_id})
 
     assert response.status_code == 200
@@ -170,7 +156,7 @@ def test_dq_fix_timestamps_inserts_rows(auth_client, db_session, test_user, fake
     assert payload["inserted_rows"] == 1
 
 
-def test_dq_undo_restores_previous(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_dq_undo_restores_previous(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import dq
     from backend.src.api.db_models import Dataset
 
@@ -182,8 +168,6 @@ def test_dq_undo_restores_previous(auth_client, db_session, test_user, fake_stor
     previous_key = fake_storage.build_key(file_id, suffix="previous", ext="csv", prefix="uploads")
     fake_storage.put_text(previous_key, "value\n10\n")
 
-    monkeypatch.setattr(dq, "storage", fake_storage)
-
     response = auth_client.post("/api/dq/undo", json={"file_id": file_id})
 
     assert response.status_code == 200
@@ -192,7 +176,7 @@ def test_dq_undo_restores_previous(auth_client, db_session, test_user, fake_stor
     assert not fake_storage.exists(previous_key)
 
 
-def test_dq_save_modified_marks_dataset(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_dq_save_modified_marks_dataset(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import dq
     from backend.src.api.db_models import Dataset
 
@@ -204,8 +188,6 @@ def test_dq_save_modified_marks_dataset(auth_client, db_session, test_user, fake
     previous_key = fake_storage.build_key(file_id, suffix="previous", ext="csv", prefix="uploads")
     fake_storage.put_text(previous_key, "value\n10\n")
 
-    monkeypatch.setattr(dq, "storage", fake_storage)
-
     response = auth_client.post("/api/dq/save-modified", json={"file_id": file_id})
 
     assert response.status_code == 200
@@ -215,7 +197,7 @@ def test_dq_save_modified_marks_dataset(auth_client, db_session, test_user, fake
     assert not fake_storage.exists(previous_key)
 
 
-def test_dq_download_dataset(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_dq_download_dataset(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import dq
     from backend.src.api.db_models import Dataset
 
@@ -226,8 +208,6 @@ def test_dq_download_dataset(auth_client, db_session, test_user, fake_storage, m
 
     key = fake_storage.build_key(file_id, suffix="raw", ext="csv", prefix="uploads")
     fake_storage.put_text(key, "value\n1\n")
-
-    monkeypatch.setattr(dq, "storage", fake_storage)
 
     response = auth_client.get(f"/api/dq/download/{file_id}")
 

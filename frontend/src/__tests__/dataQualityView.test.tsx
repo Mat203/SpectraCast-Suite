@@ -24,10 +24,6 @@ vi.mock('../lib/useHybridCompute', () => ({
 	}),
 }));
 
-vi.mock('../lib/api', () => ({
-	apiFetch: vi.fn(),
-	downloadFile: vi.fn(),
-}));
 
 const createApiResponse = (options: {
 	ok: boolean;
@@ -49,7 +45,7 @@ describe('DataQualityView', () => {
 	});
 
 	it('shows an empty state when there are no recent datasets', async () => {
-		apiFetchMock.mockResolvedValueOnce(
+		apiFetchMock.mockResolvedValue(
 			createApiResponse({ ok: true, json: recentDatasetsEmpty }) as unknown as Response,
 		);
 
@@ -60,7 +56,7 @@ describe('DataQualityView', () => {
 
 	it('surfaces out-of-memory errors during local scans', async () => {
 		computeModeState.isLocalMode = true;
-		apiFetchMock.mockResolvedValueOnce(
+		apiFetchMock.mockResolvedValue(
 			createApiResponse({ ok: true, json: recentDatasetsEmpty }) as unknown as Response,
 		);
 

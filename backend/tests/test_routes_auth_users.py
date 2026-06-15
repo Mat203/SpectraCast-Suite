@@ -32,7 +32,7 @@ def test_google_login_creates_user(client, monkeypatch):
     assert "access_token" in response.json()
 
 
-def test_users_profile_and_onboard(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_users_profile_and_onboard(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.db_models import Dataset, DatasetFileMeta, UserOnboardingState
     from backend.src.api.routes import users
 
@@ -47,7 +47,6 @@ def test_users_profile_and_onboard(auth_client, db_session, test_user, fake_stor
     db_session.commit()
 
     fake_storage.put_text("outputs/plot_file-123.png", "fake png data")
-    monkeypatch.setattr(users, "storage", fake_storage)
 
     response = auth_client.get("/api/users/me")
     assert response.status_code == 200

@@ -6,6 +6,7 @@ import { useComputeMode } from '../lib/ComputeModeContext.jsx';
 import { LOCAL_VS_PLOT_CODE, LOCAL_VS_STANDARDIZE_CODE } from '../lib/localComputeScripts';
 import { useAppStore } from '../store/useAppStore';
 import type { AppStoreState } from '../store/useAppStore';
+import { FileUpload } from './FileUpload';
 
 type Tab = 'plot_generator' | 'code_standardizer' | 'style_creator';
 
@@ -160,6 +161,8 @@ export const VisualStandardizerView: React.FC = () => {
     }
   }, [yAxes, resolvedYAxes, setYAxes]);
 
+  const loadRecentDatasets = useAppStore((state: AppStoreState) => state.loadRecentDatasets);
+
   const {
     isDragging,
     isLoading,
@@ -190,8 +193,6 @@ export const VisualStandardizerView: React.FC = () => {
   const [plotPreviewUrl, setPlotPreviewUrl] = useState<string | null>(null);
   const [localPlotBase64, setLocalPlotBase64] = useState<string | null>(null);
   const [isPlotFullScreen, setIsPlotFullScreen] = useState(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const ensureLocalCsv = async () => {
     if (localCsvRef.current) {
@@ -286,41 +287,8 @@ export const VisualStandardizerView: React.FC = () => {
   }, [columns, xAxis, resolvedYAxes, yAxes, setVisualStandardizer]);
 
   useEffect(() => {
-    let isActive = true;
-
-    const fetchRecentDatasets = async () => {
-      setIsLoadingRecent(true);
-      setRecentError(null);
-
-      try {
-        const response = await apiFetch('/api/users/me');
-        if (!response.ok) {
-          throw new Error('Failed to load recent datasets');
-        }
-
-        const data = (await response.json()) as { datasets?: RecentDataset[] };
-        const recent = (data.datasets || []).slice(0, 10);
-
-        if (isActive) {
-          setRecentDatasets(recent);
-        }
-      } catch (err) {
-        if (isActive) {
-          setRecentError(err instanceof Error ? err.message : 'Failed to load recent datasets');
-        }
-      } finally {
-        if (isActive) {
-          setIsLoadingRecent(false);
-        }
-      }
-    };
-
-    fetchRecentDatasets();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
+    loadRecentDatasets();
+  }, [loadRecentDatasets]);
 
   useEffect(() => {
     if (!plotResult?.plot_filename) {
@@ -368,14 +336,30 @@ export const VisualStandardizerView: React.FC = () => {
     };
   }, [plotPreviewUrl]);
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
+  const handleFileSelect = (selectedFile: File | null) => {
+    if (!selectedFile) return;
+    if (selectedFile.name.toLowerCase().endsWith('.csv')) {
+      setActiveDataset({
+        file: selectedFile,
+        fileId: null,
+        originalFilename: selectedFile.name,
+        columns: [],
+      });
+      setVisualStandardizerSession({
+        file: selectedFile,
+        fileId: null,
+        originalFilename: selectedFile.name,
+        columns: [],
+      });
+      parseColumnsFromFile(selectedFile);
+      localCsvRef.current = null;
+      setLocalPlotBase64(null);
+      setPlotPreviewUrl(null);
+      setPlotResult(null);
+      setChartCode('');
+    } else {
+      alert('Please upload a .csv file');
+    }
   };
 
   const parseColumnsFromFile = (nextFile: File) => {
@@ -446,60 +430,6 @@ export const VisualStandardizerView: React.FC = () => {
     setDatasetColumns,
   ]);
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const droppedFile = e.dataTransfer.files[0];
-      if (droppedFile.name.endsWith('.csv')) {
-        setActiveDataset({
-          file: droppedFile,
-          fileId: null,
-          originalFilename: droppedFile.name,
-          columns: [],
-        });
-        setVisualStandardizerSession({
-          file: droppedFile,
-          fileId: null,
-          originalFilename: droppedFile.name,
-          columns: [],
-        });
-        parseColumnsFromFile(droppedFile);
-        localCsvRef.current = null;
-        setLocalPlotBase64(null);
-        setPlotPreviewUrl(null);
-        setPlotResult(null);
-        setChartCode('');
-      } else {
-        alert('Please upload a .csv file');
-      }
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const selectedFile = e.target.files[0];
-      setActiveDataset({
-        file: selectedFile,
-        fileId: null,
-        originalFilename: selectedFile.name,
-        columns: [],
-      });
-      setVisualStandardizerSession({
-        file: selectedFile,
-        fileId: null,
-        originalFilename: selectedFile.name,
-        columns: [],
-      });
-      parseColumnsFromFile(selectedFile);
-      localCsvRef.current = null;
-      setLocalPlotBase64(null);
-      setPlotPreviewUrl(null);
-      setPlotResult(null);
-      setChartCode('');
-    }
-  };
 
 
   const handleSelectRecentDataset = async (dataset: RecentDataset) => {
@@ -542,9 +472,6 @@ export const VisualStandardizerView: React.FC = () => {
     }
   };
 
-  const triggerFileInput = () => {
-    fileInputRef.current?.click();
-  };
 
   const handleGeneratePlot = async () => {
     if (!file || !xAxis || resolvedYAxes.length === 0 || !selectedStyle) {
@@ -805,32 +732,13 @@ export const VisualStandardizerView: React.FC = () => {
             <div className="space-y-6">
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
                 <div>
-                  <div
-                    className={`w-full border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
-                      isDragging
-                        ? 'border-indigo-500 bg-indigo-50'
-                        : 'border-slate-300 hover:border-indigo-400 bg-slate-50 hover:bg-slate-100'
-                    }`}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={triggerFileInput}
-                  >
-                    <svg className="w-12 h-12 mx-auto text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    <h3 className="text-lg font-medium text-slate-700 mb-1">
-                      {file ? file.name : 'Click or drag file to this area to upload'}
-                    </h3>
-                    <p className="text-sm text-slate-500">Strictly .csv files only</p>
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      className="hidden"
-                      accept=".csv"
-                      onChange={handleFileChange}
-                    />
-                  </div>
+                  <FileUpload
+                    file={file}
+                    isDragging={isDragging}
+                    onFileSelect={handleFileSelect}
+                    setIsDragging={setIsDragging}
+                    accentColor="indigo"
+                  />
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                     <div>
@@ -1040,7 +948,7 @@ export const VisualStandardizerView: React.FC = () => {
                   )}
 
                   {!isLoadingRecent && recentDatasets.length > 0 && (
-                    <div className="mt-4 flex-1 max-h-135 space-y-2 overflow-y-auto pr-1">
+                    <div className="mt-4 flex-1 max-h-165 space-y-2 overflow-y-auto pr-1">
                       {recentDatasets.map((dataset) => (
                         <button
                           key={dataset.file_id}

@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 from typing import Dict, Any, Optional
+from backend.src.core.date_utils import detect_datetime_column, infer_frequency_from_index
 
 class DataScanner:
     def __init__(self, df: pd.DataFrame):
@@ -24,27 +25,7 @@ class DataScanner:
                     pass
 
     def _get_datetime_column(self) -> Optional[str]:
-        for column in self.df.columns:
-            series = self.df[column]
-            if pd.api.types.is_datetime64_any_dtype(series):
-                return column
-            if not (pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series)):
-                continue
-
-            sample = series.dropna().astype(str)
-            if sample.empty:
-                continue
-
-            if sample.str.fullmatch(r"\d+").all():
-                continue
-
-            name_hint = str(column).lower()
-            has_name_hint = any(token in name_hint for token in ("date", "time", "timestamp", "datetime"))
-            has_separator = sample.str.contains(r"[-/:T ]").any()
-            parsed = pd.to_datetime(sample, errors="coerce")
-            if parsed.notna().mean() >= 0.8 and (has_name_hint or has_separator):
-                return column
-        return None
+        return detect_datetime_column(self.df)
 
     def _has_datetime_axis(self) -> bool:
         return isinstance(self.df.index, pd.DatetimeIndex) or self._get_datetime_column() is not None
@@ -80,42 +61,7 @@ class DataScanner:
         if len(sorted_index) < 2:
             return result
 
-        deltas = sorted_index.to_series().diff().dropna()
-        
-        if deltas.empty:
-            return result
-
-        try:
-            dominant_delta = deltas.mode().iloc[0]
-        except (IndexError, ValueError):
-            return result
-
-        dominant_delta_days = dominant_delta.days
-        if dominant_delta_days <= 0:
-            return result
-        
-        if 28 <= dominant_delta_days <= 31:
-            most_frequent_day = pd.Series(sorted_index.day).mode()[0]
-            freq_str = 'MS' if most_frequent_day == 1 else 'ME'
-            display_freq = "Monthly"
-        elif 89 <= dominant_delta_days <= 93:
-            freq_str = 'QS' 
-            display_freq = "Quarterly"
-        elif dominant_delta_days == 7:
-            freq_str = 'W'
-            display_freq = "Weekly"
-        elif dominant_delta_days == 1:
-            has_weekends = (sorted_index.dayofweek >= 5).any()
-            if not has_weekends:
-                freq_str = 'B'
-                display_freq = "Business Daily (Mon-Fri)"
-            else:
-                freq_str = 'D'
-                display_freq = "Daily"
-        else:
-            freq_str = f"{dominant_delta_days}D"
-            display_freq = f"Every {dominant_delta_days} days"
-
+        freq_str, display_freq = infer_frequency_from_index(sorted_index)
         result["frequency"] = freq_str
         result["display_frequency"] = display_freq
         

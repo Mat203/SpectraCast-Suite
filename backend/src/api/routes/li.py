@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from backend.src.api.models.li import RunIndicatorsRequest, RunIndicatorsResponse
 from backend.src.api.db import get_db
 from backend.src.api.db_models import User
-from backend.src.api.deps import get_current_user
+from backend.src.api.deps import get_current_user, get_storage
 from backend.src.api.services.datasets import require_dataset_owner, require_dataset_owner_for_filename
 from backend.src.core.loader import DataLoader
 from backend.src.api.services.storage import StorageService
@@ -19,20 +19,7 @@ from backend.src.modules.li.streaming import stream_leading_indicator_events
 router = APIRouter()
 stream_router = APIRouter()
 
-storage = StorageService()
-
-def convert_numpy_types(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {k: convert_numpy_types(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_numpy_types(i) for i in obj]
-    elif isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    return obj
+from backend.src.core.utils import convert_numpy_types
 
 def sse_event(payload: Dict[str, Any]) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -43,6 +30,7 @@ def run_leading_indicators(
     x_llm_api_key: Optional[str] = Header(default=None, alias="x-llm-api-key"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     try:
         require_dataset_owner(db, current_user.id, request.file_id)
@@ -97,6 +85,7 @@ def download_output_file(
     filename: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner_for_filename(db, current_user.id, filename)
     safe_name = Path(filename).name
@@ -123,6 +112,7 @@ async def stream_leading_indicators(
     x_llm_api_key: Optional[str] = Header(default=None, alias="x-llm-api-key"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
 ):
     require_dataset_owner(db, current_user.id, request.file_id)
     loader = DataLoader(data_folder_name="uploads", storage=storage)

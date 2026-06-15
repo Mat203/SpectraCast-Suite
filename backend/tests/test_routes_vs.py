@@ -36,7 +36,6 @@ def test_vs_generate_plot(auth_client, db_session, test_user, fake_storage, monk
         output.write_bytes(b"png")
         return output
 
-    monkeypatch.setattr(vs, "storage", fake_storage)
     monkeypatch.setattr("backend.src.api.routes.vs.PlotEngine.generate_plot", fake_generate_plot)
 
     payload = {
@@ -68,7 +67,7 @@ def test_get_style_config_not_found(auth_client):
     assert "not found" in response.json()["detail"].lower()
 
 
-def test_vs_delete_plot(auth_client, db_session, test_user, fake_storage, monkeypatch):
+def test_vs_delete_plot(auth_client, db_session, test_user, fake_storage):
     from backend.src.api.routes import vs
     from backend.src.api.db_models import Dataset
 
@@ -81,7 +80,6 @@ def test_vs_delete_plot(auth_client, db_session, test_user, fake_storage, monkey
     key = fake_storage.join_key("outputs", filename)
     fake_storage.put_text(key, "fake plot image")
 
-    monkeypatch.setattr(vs, "storage", fake_storage)
 
     response = auth_client.delete(f"/api/vs/plot/{filename}")
     assert response.status_code == 200
