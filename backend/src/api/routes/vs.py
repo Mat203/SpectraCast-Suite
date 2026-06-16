@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 import os
 from pathlib import Path
+from typing import List
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from backend.src.api.models.vs import GeneratePlotRequest, GeneratePlotResponse, StandardizeCodeRequest, StandardizeCodeResponse
 from backend.src.api.db import get_db
@@ -15,9 +17,6 @@ from backend.src.modules.vs.visualizer import VisualStandardizer
 from backend.src.modules.vs.code_builder import build_plot_source_code
 
 router = APIRouter()
-
-from pydantic import BaseModel
-from typing import List
 
 class StylesResponse(BaseModel):
     styles: List[str]

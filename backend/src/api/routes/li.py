@@ -10,7 +10,6 @@ from backend.src.core.loader import DataLoader
 from backend.src.api.services.storage import StorageService
 from fastapi.responses import StreamingResponse
 from pathlib import Path
-import numpy as np
 import json
 
 from backend.src.modules.li.li import LeadingIndicatorsModule
