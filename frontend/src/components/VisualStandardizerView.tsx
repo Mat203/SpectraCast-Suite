@@ -107,7 +107,6 @@ export const VisualStandardizerView: React.FC = () => {
   const setXLabel = (value: string) => setVisualStandardizer({ xLabel: value });
   const setYLabel = (value: string) => setVisualStandardizer({ yLabel: value });
   const setY2Label = (value: string) => setVisualStandardizer({ y2Label: value });
-  const setOutputFilename = (value: string) => setVisualStandardizer({ outputFilename: value });
 
   const toggleYAxis = (value: string) => {
     if (!value) {

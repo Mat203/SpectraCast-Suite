@@ -2,7 +2,6 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 import requests
-from dotenv import load_dotenv
 
 from backend.src.modules.llm.provider import build_provider_request
 
@@ -13,7 +12,6 @@ class QueryGenerator:
         provider: str = "google",
         model: str = "gemini-2.5-flash-lite",
     ):
-        load_dotenv()
         self.logger = logging.getLogger(__name__)
         resolved_provider = (provider or os.getenv("LLM_PROVIDER") or "google").strip().lower()
         resolved_model = model.strip() if model and model.strip() else os.getenv("LLM_MODEL", model)
