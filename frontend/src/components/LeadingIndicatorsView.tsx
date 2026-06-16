@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { apiFetch, downloadFile } from '../lib/api';
+import { apiFetch, downloadFile, downloadLocalCsv } from '../lib/api';
 import { useHybridCompute } from '../lib/useHybridCompute';
 import { useComputeMode } from '../lib/ComputeModeContext.jsx';
 import { LOCAL_LI_RUN_CODE } from '../lib/localComputeScripts';
 import { useAppStore } from '../store/useAppStore';
 import type { AppStoreState } from '../store/useAppStore';
 import { FileUpload } from './FileUpload';
+import { parseColumnsFromCsvFile } from '../lib/csvUtils';
 
 interface UploadResponse {
   status: string;
@@ -92,17 +93,6 @@ export const LeadingIndicatorsView: React.FC = () => {
     return csvData;
   };
 
-  const downloadLocalCsv = (csvData: string, filename: string) => {
-    const blob = new Blob([csvData], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-  };
 
   useEffect(() => {
     loadRecentDatasets();
@@ -126,28 +116,18 @@ export const LeadingIndicatorsView: React.FC = () => {
   }, [result]);
 
   const parseColumnsFromFile = (nextFile: File) => {
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      const text = typeof reader.result === 'string' ? reader.result : '';
-      const firstLine = text.split(/\r?\n/)[0] ?? '';
-      const parsedHeaders = firstLine
-        .replace(/^\uFEFF/, '')
-        .split(',')
-        .map((header) => header.trim().replace(/^"|"$/g, ''))
-        .filter(Boolean);
-
-      setDatasetColumns(parsedHeaders);
-      setTargetColumn(parsedHeaders[0] ?? '');
-    };
-
-    reader.onerror = () => {
-      setError('Could not read CSV headers. Try another file.');
-      setDatasetColumns([]);
-      setTargetColumn('');
-    };
-
-    reader.readAsText(nextFile.slice(0, 64 * 1024));
+    parseColumnsFromCsvFile(
+      nextFile,
+      (parsedHeaders) => {
+        setDatasetColumns(parsedHeaders);
+        setTargetColumn(parsedHeaders[0] ?? '');
+      },
+      () => {
+        setError('Could not read CSV headers. Try another file.');
+        setDatasetColumns([]);
+        setTargetColumn('');
+      }
+    );
   };
 
   const handleFileSelect = (nextFile: File | null) => {

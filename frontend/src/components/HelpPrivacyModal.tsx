@@ -75,9 +75,6 @@ export const HelpPrivacyModal: React.FC<HelpPrivacyModalProps> = ({ isOpen, onCl
                   <p className="font-semibold text-slate-900 mb-1">Full Control</p>
                   <p>You retain the right to access, export, or permanently delete your datasets and account at any time through your dashboard.</p>
                 </div>
-                <div className="pt-2 border-t border-slate-200">
-                  <p>For more details, please review our <a href="#privacy-policy" className="text-blue-600 hover:text-blue-700 hover:underline font-medium">Privacy Policy</a> and <a href="#terms-of-service" className="text-blue-600 hover:text-blue-700 hover:underline font-medium">Terms of Service</a>.</p>
-                </div>
               </div>
             </div>
 

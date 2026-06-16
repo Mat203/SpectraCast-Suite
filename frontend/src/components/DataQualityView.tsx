@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import posthog from 'posthog-js';
-import { apiFetch, downloadFile } from '../lib/api';
+import { apiFetch, downloadFile, downloadLocalCsv } from '../lib/api';
 import { STRATEGY_DESCRIPTIONS } from '../lib/outlierStrategies';
 import type { OutlierStrategyKey } from '../lib/outlierStrategies';
 import { MISSING_VALUES_DESCRIPTIONS } from '../lib/missingValueStrategies';
@@ -282,17 +282,6 @@ export const DataQualityView: React.FC = () => {
     });
   };
 
-  const downloadLocalCsv = (csvData: string, filename: string) => {
-    const blob = new Blob([csvData], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-  };
 
   const renderPreviewChart = (data: PreviewSeries | null, showBefore: boolean = true) => {
     if (!data) {
@@ -435,30 +424,7 @@ export const DataQualityView: React.FC = () => {
       let currentFileId = fileId;
 
       if (!useExistingFile || !currentFileId) {
-        if (!file) throw new Error('No file selected.');
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const uploadResponse = await apiFetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!uploadResponse.ok) {
-          throw new Error(`Upload failed (${uploadResponse.status})`);
-        }
-
-        const uploadResult = (await uploadResponse.json()) as UploadResponse;
-
-        if (!uploadResult.file_id) {
-          throw new Error('Upload succeeded but file_id was missing.');
-        }
-
-        currentFileId = uploadResult.file_id;
-        setActiveDataset({
-          fileId: currentFileId,
-          originalFilename: uploadResult.original_filename || file?.name || originalFilename || null,
-        });
+        currentFileId = await resolveFileId(!useExistingFile);
       }
 
       const scanResponse = await apiFetch('/api/dq/scan', {
@@ -510,21 +476,25 @@ export const DataQualityView: React.FC = () => {
     setIsOutlierModalOpen(true);
   };
 
-  const resolveFileId = async () => {
+  const resolveFileId = async (force: boolean = false) => {
     let currentFileId = fileId;
 
-    if (!currentFileId && file) {
+    if (force || (!currentFileId && file)) {
+      if (!file) throw new Error('No file selected.');
+      const formData = new FormData();
+      formData.append('file', file);
+
       const uploadResponse = await apiFetch('/api/upload', {
         method: 'POST',
-        body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })(),
+        body: formData,
       });
 
       if (!uploadResponse.ok) throw new Error('Upload failed');
-      const uploadResult = await uploadResponse.json() as UploadResponse;
+      const uploadResult = (await uploadResponse.json()) as UploadResponse;
       currentFileId = uploadResult.file_id;
       setActiveDataset({
         fileId: currentFileId,
-        originalFilename: uploadResult.original_filename || file?.name || null,
+        originalFilename: uploadResult.original_filename || file?.name || originalFilename || null,
       });
     }
 
@@ -681,21 +651,7 @@ export const DataQualityView: React.FC = () => {
         return;
       }
 
-      let currentFileId = fileId;
-      
-      if (!currentFileId && file) {
-        const uploadResponse = await apiFetch('/api/upload', {
-          method: 'POST',
-          body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })(),
-        });
-
-        if (!uploadResponse.ok) throw new Error('Upload failed');
-        const uploadResult = await uploadResponse.json() as UploadResponse;
-        currentFileId = uploadResult.file_id;
-        setActiveDataset({ fileId: currentFileId });
-      }
-      
-      if (!currentFileId) throw new Error('No file available for processing');
+      const currentFileId = await resolveFileId();
 
       const actionRes = await apiFetch('/api/dq/handle-missing', {
         method: 'POST',

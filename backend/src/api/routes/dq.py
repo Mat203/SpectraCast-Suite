@@ -69,6 +69,17 @@ def restore_previous_dataset(file_id: str, storage: StorageService) -> None:
     )
     storage.delete(previous_key)
 
+
+def save_dataset(storage: StorageService, file_path: str, df: pd.DataFrame) -> None:
+    """Saves a DataFrame back to storage, preserving DatetimeIndex if present."""
+    if isinstance(df.index, pd.DatetimeIndex):
+        df_to_save = df.copy()
+        if df_to_save.index.name is None:
+            df_to_save.index.name = "Date"
+        storage.write_csv(storage.join_key("uploads", file_path), df_to_save, include_index=True)
+    else:
+        storage.write_csv(storage.join_key("uploads", file_path), df, include_index=False)
+
 @router.post("/scan", response_model=Dict[str, Any])
 def scan_data(
     request: ScanRequest,
@@ -165,13 +176,7 @@ def handle_outliers(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if isinstance(df.index, pd.DatetimeIndex):
-        df_to_save = df.copy()
-        if df_to_save.index.name is None:
-            df_to_save.index.name = "Date"
-        storage.write_csv(storage.join_key("uploads", file_path), df_to_save, include_index=True)
-    else:
-        storage.write_csv(storage.join_key("uploads", file_path), df, include_index=False)
+    save_dataset(storage, file_path, df)
 
     return {"status": "success", "message": f"Successfully applied {request.strategy} to {request.column}"}
 
@@ -219,13 +224,7 @@ def handle_missing(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if isinstance(updated_df.index, pd.DatetimeIndex):
-        df_to_save = updated_df.copy()
-        if df_to_save.index.name is None:
-            df_to_save.index.name = "Date"
-        storage.write_csv(storage.join_key("uploads", file_path), df_to_save, include_index=True)
-    else:
-        storage.write_csv(storage.join_key("uploads", file_path), updated_df, include_index=False)
+    save_dataset(storage, file_path, updated_df)
 
     return {"status": "success", "message": f"Successfully applied strategy {request.strategy} for missing values in {request.column}"}
 
@@ -251,7 +250,7 @@ def fix_timestamps(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    storage.write_csv(storage.join_key("uploads", file_path), updated_df, include_index=False)
+    save_dataset(storage, file_path, updated_df)
 
     return FixTimestampsResponse(
         status="success",

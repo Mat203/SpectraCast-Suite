@@ -7,6 +7,7 @@ import { LOCAL_VS_PLOT_CODE, LOCAL_VS_STANDARDIZE_CODE } from '../lib/localCompu
 import { useAppStore } from '../store/useAppStore';
 import type { AppStoreState } from '../store/useAppStore';
 import { FileUpload } from './FileUpload';
+import { parseColumnsFromCsvFile } from '../lib/csvUtils';
 
 type Tab = 'plot_generator' | 'code_standardizer' | 'style_creator';
 
@@ -106,6 +107,7 @@ export const VisualStandardizerView: React.FC = () => {
   const setXLabel = (value: string) => setVisualStandardizer({ xLabel: value });
   const setYLabel = (value: string) => setVisualStandardizer({ yLabel: value });
   const setY2Label = (value: string) => setVisualStandardizer({ y2Label: value });
+  const setOutputFilename = (value: string) => setVisualStandardizer({ outputFilename: value });
 
   const toggleYAxis = (value: string) => {
     if (!value) {
@@ -353,38 +355,28 @@ export const VisualStandardizerView: React.FC = () => {
   };
 
   const parseColumnsFromFile = (nextFile: File) => {
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      const text = typeof reader.result === 'string' ? reader.result : '';
-      const firstLine = text.split(/\r?\n/)[0] ?? '';
-      const parsedHeaders = firstLine
-        .replace(/^\uFEFF/, '')
-        .split(',')
-        .map((header) => header.trim().replace(/^"|"$/g, ''))
-        .filter(Boolean);
-
-      setDatasetColumns(parsedHeaders);
-      if (parsedHeaders.length >= 2) {
-        setXAxis(parsedHeaders[0]);
-        setYAxes([{ column: parsedHeaders[1], axis: 'primary' }]);
-      } else if (parsedHeaders.length === 1) {
-        setXAxis(parsedHeaders[0]);
-        setYAxes([{ column: parsedHeaders[0], axis: 'primary' }]);
-      } else {
+    parseColumnsFromCsvFile(
+      nextFile,
+      (parsedHeaders) => {
+        setDatasetColumns(parsedHeaders);
+        if (parsedHeaders.length >= 2) {
+          setXAxis(parsedHeaders[0]);
+          setYAxes([{ column: parsedHeaders[1], axis: 'primary' }]);
+        } else if (parsedHeaders.length === 1) {
+          setXAxis(parsedHeaders[0]);
+          setYAxes([{ column: parsedHeaders[0], axis: 'primary' }]);
+        } else {
+          setXAxis('');
+          setYAxes([]);
+        }
+      },
+      () => {
+        setError('Could not read CSV headers. Try another file.');
+        setDatasetColumns([]);
         setXAxis('');
         setYAxes([]);
       }
-    };
-
-    reader.onerror = () => {
-      setError('Could not read CSV headers. Try another file.');
-      setDatasetColumns([]);
-      setXAxis('');
-      setYAxes([]);
-    };
-
-    reader.readAsText(nextFile.slice(0, 1024));
+    );
   };
 
 
@@ -555,9 +547,20 @@ export const VisualStandardizerView: React.FC = () => {
 
     try {
       if (isLocalMode) {
+        let styleConfig = {};
+        if (codeStyle) {
+          try {
+            const styleRes = await apiFetch(`/api/vs/styles/${codeStyle}`);
+            if (styleRes.ok) {
+              styleConfig = await styleRes.json();
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
         const localResult = await executeHybrid(
           null,
-          { raw_code: rawCode, style_name: codeStyle },
+          { raw_code: rawCode, style_name: codeStyle, style_config: styleConfig },
           { code: LOCAL_VS_STANDARDIZE_CODE },
         );
         if (localResult?.status === 'error' && localResult?.message) {
@@ -896,7 +899,7 @@ export const VisualStandardizerView: React.FC = () => {
                   )}
 
                   {!isLoadingRecent && recentDatasets.length > 0 && (
-                    <div className="mt-4 flex-1 max-h-170 space-y-2 overflow-y-auto pr-1">
+                    <div className="mt-4 flex-1 max-h-185 space-y-2 overflow-y-auto pr-1">
                       {recentDatasets.map((dataset) => (
                         <button
                           key={dataset.file_id}
