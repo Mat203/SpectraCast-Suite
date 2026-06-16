@@ -1,17 +1,11 @@
 import os
 import time
-import serpapi
 import pandas as pd
 import requests
 from typing import List
-from dotenv import load_dotenv
-
-load_dotenv()
-
 class TrendsFetcher:
     def __init__(self, api_key: str = None):
         self.api_key = api_key or os.getenv("SERPAPI_KEY")
-        self.client = serpapi.Client(api_key=self.api_key)
         self.base_url = "https://serpapi.com/search"
         self.timeout_seconds = 10
 
