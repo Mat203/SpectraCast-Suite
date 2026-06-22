@@ -13,7 +13,6 @@ if (typeof window !== 'undefined' && !window.location.host.includes('localhost')
     api_host: 'https://eu.i.posthog.com',
     person_profiles: 'identified_only',
     capture_pageview: false,
-    capture_pageleave: true,
   })
 }
 
