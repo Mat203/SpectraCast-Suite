@@ -11,7 +11,9 @@ const posthogKey = import.meta.env.VITE_POSTHOG_KEY ?? ''
 if (typeof window !== 'undefined' && !window.location.host.includes('localhost') && posthogKey) {
   posthog.init(posthogKey, {
     api_host: 'https://eu.i.posthog.com',
-    person_profiles: 'identified_only'
+    person_profiles: 'identified_only',
+    capture_pageview: false,
+    capture_pageleave: true,
   })
 }
 
