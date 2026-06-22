@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import posthog from 'posthog-js';
 
 const STORAGE_KEY = 'spectracast_compute_mode_local';
 
@@ -19,6 +20,12 @@ export const ComputeModeProvider = ({ children }) => {
   useEffect(() => {
     if (!isReady) return;
     localStorage.setItem(STORAGE_KEY, String(isLocalMode));
+
+    if (isLocalMode) {
+      posthog.opt_out_capturing();
+    } else if (posthog.__loaded) {
+      posthog.opt_in_capturing();
+    }
   }, [isLocalMode, isReady]);
 
   const toggle = useCallback(() => {
