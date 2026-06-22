@@ -886,13 +886,32 @@ fig, ax = plt.subplots()
 ax2 = ax.twinx() if secondary_cols else None
 
 if x_col and x_col in df.columns:
-    x_data = df[x_col]
+    x_data = df[x_col].copy()
+    if not pd.api.types.is_numeric_dtype(x_data):
+        parsed = pd.to_datetime(x_data, errors="coerce")
+        if parsed.notna().mean() >= 0.5:
+            x_data = parsed
+        else:
+            x_data = x_data.fillna("")
 else:
     x_data = df.index
+
+plot_mask = pd.Series(True, index=df.index)
+if hasattr(x_data, "isna"):
+    plot_mask = plot_mask & (~x_data.isna())
 
 all_cols = primary_cols + secondary_cols
 if not all_cols:
     all_cols = ["y"]
+
+for col in all_cols:
+    if col in df.columns:
+        plot_mask = plot_mask & (~df[col].isna())
+
+plot_df = df.loc[plot_mask].reset_index(drop=True)
+if hasattr(x_data, "loc"):
+    x_data = x_data.loc[plot_mask].reset_index(drop=True)
+
 
 if chart_type == "2":
     indices = range(len(x_data))
@@ -901,29 +920,29 @@ if chart_type == "2":
     offset = -((total - 1) / 2) * bar_width
     for i, col in enumerate(primary_cols):
         color = primary_colors[i % len(primary_colors)]
-        ax.bar([idx + offset for idx in indices], df[col], width=bar_width, label=col, color=color)
+        ax.bar([idx + offset for idx in indices], plot_df[col], width=bar_width, label=col, color=color)
         offset += bar_width
     if ax2:
         for i, col in enumerate(secondary_cols):
             color = secondary_colors[i % len(secondary_colors)]
-            ax2.bar([idx + offset for idx in indices], df[col], width=bar_width, label=f"{col} (secondary)", alpha=0.8, color=color)
+            ax2.bar([idx + offset for idx in indices], plot_df[col], width=bar_width, label=f"{col} (secondary)", alpha=0.8, color=color)
             offset += bar_width
 elif chart_type == "3":
     for i, col in enumerate(primary_cols):
         color = primary_colors[i % len(primary_colors)]
-        ax.scatter(x_data, df[col], label=col, color=color)
+        ax.scatter(x_data, plot_df[col], label=col, color=color)
     if ax2:
         for i, col in enumerate(secondary_cols):
             color = secondary_colors[i % len(secondary_colors)]
-            ax2.scatter(x_data, df[col], label=f"{col} (secondary)", color=color)
+            ax2.scatter(x_data, plot_df[col], label=f"{col} (secondary)", color=color)
 else:
     for i, col in enumerate(primary_cols):
         color = primary_colors[i % len(primary_colors)]
-        ax.plot(x_data, df[col], label=col, color=color)
+        ax.plot(x_data, plot_df[col], label=col, color=color)
     if ax2:
         for i, col in enumerate(secondary_cols):
             color = secondary_colors[i % len(secondary_colors)]
-            ax2.plot(x_data, df[col], label=f"{col} (secondary)", color=color)
+            ax2.plot(x_data, plot_df[col], label=f"{col} (secondary)", color=color)
 
 ax.set_title(title if title else (", ".join(all_cols) + " vs " + (x_col or "Date")))
 ax.set_xlabel(x_label if x_label else (x_col or "Date"))
