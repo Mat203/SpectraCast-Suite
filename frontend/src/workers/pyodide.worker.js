@@ -1,12 +1,12 @@
-import { loadPyodide } from 'pyodide';
+const PYODIDE_INDEX_URL = import.meta.env.VITE_PYODIDE_INDEX_URL
+  || 'https://fastly.jsdelivr.net/pyodide/v0.26.4/full/';
 
 let pyodideReadyPromise;
-const PYODIDE_INDEX_URL = import.meta.env.VITE_PYODIDE_INDEX_URL
-  || 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/';
 
 const initPyodide = async () => {
   if (!pyodideReadyPromise) {
     pyodideReadyPromise = (async () => {
+      const { loadPyodide } = await import(/* @vite-ignore */ PYODIDE_INDEX_URL + 'pyodide.mjs');
       const pyodide = await loadPyodide({ indexURL: PYODIDE_INDEX_URL });
       await pyodide.loadPackage(['pandas', 'numpy']);
       return pyodide;
@@ -18,10 +18,20 @@ const initPyodide = async () => {
 const serializeResult = async (pyodide) => {
   const serializer = `
 import json
+import math
 import numpy as np
 import pandas as pd
 
 result = globals().get("result")
+
+def _clean_nan(obj):
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _clean_nan(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_clean_nan(v) for v in obj]
+    return obj
 
 def _serialize(value):
     if value is None:
@@ -36,7 +46,7 @@ def _serialize(value):
         return {"type": "primitive", "value": value}
     return {"type": "repr", "value": repr(value)}
 
-json.dumps(_serialize(result))
+json.dumps(_clean_nan(_serialize(result)))
 `;
 
   return pyodide.runPythonAsync(serializer);
