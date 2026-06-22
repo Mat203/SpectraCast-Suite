@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import posthog from 'posthog-js'
 import { Layout } from './components/Layout'
 import { DataQualityView } from './components/DataQualityView'
 import { LeadingIndicatorsView } from './components/LeadingIndicatorsView'
@@ -80,6 +81,14 @@ const WelcomeRoute = () => {
   return <WelcomeView />
 }
 
+function PostHogPageviewTracker() {
+  const location = useLocation()
+  useEffect(() => {
+    posthog.capture('$pageview')
+  }, [location.pathname])
+  return null
+}
+
 function App() {
   const [activeModule, setActiveModule] = useState<ModuleKey>('dq')
 
@@ -88,6 +97,7 @@ function App() {
       <UserProvider>
         <ComputeModeProvider>
           <BrowserRouter>
+            <PostHogPageviewTracker />
             <Routes>
               <Route path="/" element={<Navigate to="/app" replace />} />
               <Route path="/login" element={<Login />} />
